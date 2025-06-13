@@ -1,0 +1,8 @@
+table: Sample Table of Elements
+
+[ID] Element ID | [Name] Element Name | [Symbol] Chemical Symbol | [Origin] Discovered
+1 | Hydrogen | H | Henry Cavendish
+2 | Helium | He | Pierre Janssen & Norman Lockyer
+3 | Lithium | Li | Johan August Arfwedson
+4 | Beryllium | Be | Louis Nicolas Vauquelin
+5 | ::colspan=2:: Boron B (spans two columns) | ::colspan=1:: Also Boron related info
