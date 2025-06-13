@@ -2,20 +2,33 @@ package renderer
 
 import (
 	"diagramgen/pkg/table"
+	"fmt" // Import fmt for formatSettingsLine helper
 	"strings"
 	"testing"
 )
 
 // Helper to create cells with specific colspan/rowspan for tests.
-// table.NewCell initializes Colspan and Rowspan to 1.
 func newTestCell(title, content string, cs, rs int) table.Cell {
-	cell := table.NewCell(title, content) // Defaults cs=1, rs=1
+	cell := table.NewCell(title, content)
 	cell.Colspan = cs
 	cell.Rowspan = rs
 	return cell
 }
 
+// Helper to format the settings string consistently for tests
+func formatSettingsLine(s table.GlobalSettings) string {
+	return fmt.Sprintf("  Settings: EdgeColor: '%s', EdgeThickness: %d, DefaultCellBG: '%s', TableBG: '%s'\n",
+		s.EdgeColor, s.EdgeThickness, s.DefaultCellBackgroundColor, s.TableBackgroundColor)
+}
+
 func TestRender(t *testing.T) {
+	defaultSettings := table.DefaultGlobalSettings()
+	defaultSettingsStr := formatSettingsLine(defaultSettings)
+
+	// Example of specific settings for a test, if needed
+	// customSettings := table.GlobalSettings{ /* ... */ }
+	// customSettingsStr := formatSettingsLine(customSettings)
+
 	tests := []struct {
 		name  string
 		table table.Table
@@ -23,22 +36,23 @@ func TestRender(t *testing.T) {
 	}{
 		{
 			name:  "Empty Table",
-			table: table.Table{Rows: []table.Row{}},
-			want:  "",
+			table: table.Table{Rows: []table.Row{}, Settings: defaultSettings},
+			want:  defaultSettingsStr, // Only settings line for an empty table
 		},
 		{
 			name:  "Empty Table with Nil Rows",
-			table: table.Table{Rows: nil},
-			want:  "",
+			table: table.Table{Rows: nil, Settings: defaultSettings},
+			want:  defaultSettingsStr, // Only settings line
 		},
 		{
 			name:  "Table with Title Only",
-			table: table.Table{Title: "Test Title", Rows: []table.Row{}},
-			want: "Rendered Table: Test Title\n",
+			table: table.Table{Title: "Test Title", Rows: []table.Row{}, Settings: defaultSettings},
+			want: "Table: Test Title\n" + defaultSettingsStr,
 		},
 		{
 			name: "Simple Table",
 			table: table.Table{
+				Settings: defaultSettings, // Add this
 				Rows: []table.Row{
 					{Cells: []table.Cell{
 						newTestCell("", "R1C1", 1, 1),
@@ -50,16 +64,18 @@ func TestRender(t *testing.T) {
 					}},
 				},
 			},
-			want: strings.Join([]string{
-				"R1C1 (cs:1) (rs:1) | R1C2 (cs:1) (rs:1)",
-				"R2C1 (cs:1) (rs:1) | R2C2 (cs:1) (rs:1)",
-				"",
-			}, "\n"),
+			want: defaultSettingsStr + // Settings line first
+				strings.Join([]string{
+					"R1C1 (cs:1) (rs:1) | R1C2 (cs:1) (rs:1)",
+					"R2C1 (cs:1) (rs:1) | R2C2 (cs:1) (rs:1)",
+					"",
+				}, "\n"),
 		},
 		{
 			name: "Table with All Features",
 			table: table.Table{
-				Title: "Complex Table",
+				Title:    "Complex Table",
+				Settings: defaultSettings, // Add this
 				Rows: []table.Row{
 					{Cells: []table.Cell{
 						newTestCell("ID", "1", 1, 1),
@@ -72,17 +88,19 @@ func TestRender(t *testing.T) {
 					}},
 				},
 			},
-			want: strings.Join([]string{
-				"Rendered Table: Complex Table",
-				"[ID] 1 (cs:1) (rs:1) | [Data] Info (cs:2) (rs:1)",
-				"More (cs:1) (rs:1) | [Note] Important (cs:1) (rs:1) | End (cs:1) (rs:1)",
-				"",
-			}, "\n"),
+			want: "Table: Complex Table\n" + // Title line
+				defaultSettingsStr + // Settings line
+				strings.Join([]string{
+					"[ID] 1 (cs:1) (rs:1) | [Data] Info (cs:2) (rs:1)",
+					"More (cs:1) (rs:1) | [Note] Important (cs:1) (rs:1) | End (cs:1) (rs:1)",
+					"",
+				}, "\n"),
 		},
 		{
 			name: "Table with different rowspans",
 			table: table.Table{
-				Title: "Rowspan Test",
+				Title:    "Rowspan Test",
+				Settings: defaultSettings, // Add this
 				Rows: []table.Row{
 					{Cells: []table.Cell{
 						newTestCell("Cell1", "Spans two rows", 1, 2),
@@ -93,32 +111,40 @@ func TestRender(t *testing.T) {
 					}},
 				},
 			},
-			want: strings.Join([]string{
-				"Rendered Table: Rowspan Test",
-				"[Cell1] Spans two rows (cs:1) (rs:2) | [Cell2] Normal (cs:1) (rs:1)",
-				"[Cell3] Next row (cs:1) (rs:1)",
-				"",
-			}, "\n"),
+			want: "Table: Rowspan Test\n" + // Title line
+				defaultSettingsStr + // Settings line
+				strings.Join([]string{
+					"[Cell1] Spans two rows (cs:1) (rs:2) | [Cell2] Normal (cs:1) (rs:1)",
+					"[Cell3] Next row (cs:1) (rs:1)",
+					"",
+				}, "\n"),
 		},
 		{
 			name: "Cell with empty content but with title and colspan",
 			table: table.Table{
+				Settings: defaultSettings, // Add this
 				Rows: []table.Row{
 					{Cells: []table.Cell{
 						newTestCell("TitleOnly", "", 3, 1),
 					}},
 				},
 			},
-			// This now correctly reflects the actual output with the double space.
-			want: strings.Join([]string{
-				"[TitleOnly]  (cs:3) (rs:1)", // Note the double space
-				"",
-			}, "\n"),
+			want: defaultSettingsStr + // Settings line
+				strings.Join([]string{
+					"[TitleOnly]  (cs:3) (rs:1)", // Note the double space
+					"",
+				}, "\n"),
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			// Crucial: The Render function uses the Settings from tt.table.
+			// If tt.table.Settings is zero, it will render with zero values, not defaults.
+			// The DefaultGlobalSettings() is applied by the PARSER, not the RENDERER.
+			// So, tests must provide settings in tt.table.Settings.
+			// The code above now correctly initializes tt.table.Settings for each test case.
+
 			if got := Render(tt.table); got != tt.want {
 				t.Errorf("Render() =\n%q\nwant:\n%q", got, tt.want)
 			}

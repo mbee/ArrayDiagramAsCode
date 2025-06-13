@@ -1,8 +1,7 @@
-table: Sample Table of Elements
+table: Advanced Elements Table {bg_table:#EEEEEE, bg_cell:#FFFFFF, edge_color:#666666, edge_thickness:1}
 
-[ID] Element ID | [Name] Element Name | [Symbol] Chemical Symbol | [Origin] Discovered
-1 | Hydrogen | H | Henry Cavendish
-2 | Helium | He | Pierre Janssen & Norman Lockyer
-3 | Lithium | Li | Johan August Arfwedson
-4 | Beryllium | Be | Louis Nicolas Vauquelin
-5 | ::colspan=2:: Boron B (spans two columns) | ::colspan=1:: Also Boron related info
+[ID] Element ID | [Name] Element Name | [Symbol] Chemical Symbol | [Origin] Discovery Details {bg:#DDEEFF}
+1 | Hydrogen ::rowspan=2:: | H | Henry Cavendish (1766)
+2 | Helium | He | Pierre Janssen & Norman Lockyer (1868) {bg:#FFFFAA}
+3 | Lithium | Li ::colspan=2:: {bg:#FFDDDD} Johan August Arfwedson (1817)
+4 | Beryllium | Be | Louis Nicolas Vauquelin (1798)

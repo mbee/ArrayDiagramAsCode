@@ -2,7 +2,7 @@ package main
 
 import (
 	"diagramgen/pkg/parser"
-	"diagramgen/pkg/renderer"
+	"diagramgen/pkg/renderer" // This package now contains Render (text) and RenderToPNG
 	"fmt"
 	"io/ioutil"
 	"log"
@@ -21,9 +21,20 @@ func main() {
 		log.Fatalf("Error parsing table: %v", err)
 	}
 
-	// Render the table
-	output := renderer.Render(tableData)
+	// Render the table to PNG
+	outputFilePath := "output.png"
+	err = renderer.RenderToPNG(tableData, outputFilePath) // Using RenderToPNG
+	if err != nil {
+		// Log the error but don't necessarily make it fatal if text rendering can still proceed.
+		// However, for this task, if PNG rendering fails, it's a primary concern.
+		log.Fatalf("Error rendering table to PNG: %v", err)
+	}
 
-	// Print the output
-	fmt.Println(output)
+	fmt.Printf("Table successfully rendered to %s\n", outputFilePath)
+
+	// Optional: Still render text version for comparison/debugging
+	// This helps verify parsing independently of PNG rendering issues (e.g. font missing)
+	fmt.Println("\nTextual representation for debugging:")
+	textOutput := renderer.Render(tableData) // Text renderer from the same package
+	fmt.Println(textOutput)
 }
