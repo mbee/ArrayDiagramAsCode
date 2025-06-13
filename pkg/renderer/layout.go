@@ -2,22 +2,21 @@ package renderer
 
 import (
 	"diagramgen/pkg/table"
-	"fmt"   // For errors and logging
+	"fmt"   // For errors
 	"log"   // For logging overlaps or calculation issues
 	"math"  // For Max
 	"github.com/fogleman/gg" // For gg.Context in measurement
 )
 
-// GridCellInfo holds the calculated layout information for a single cell
-// that is ready to be drawn on the canvas.
+// GridCellInfo holds the calculated layout information for a single cell.
 type GridCellInfo struct {
-	OriginalCell *table.Cell // Pointer to the original cell data from the input table
-	X            float64     // Calculated X position on canvas (top-left corner)
-	Y            float64     // Calculated Y position on canvas (top-left corner)
-	Width        float64     // Calculated final width for drawing this cell
-	Height       float64     // Calculated final height for drawing this cell
-	GridR        int         // Top-left logical row index in the grid
-	GridC        int         // Top-left logical column index in the grid
+	OriginalCell *table.Cell
+	X            float64
+	Y            float64
+	Width        float64
+	Height       float64
+	GridR        int
+	GridC        int
 }
 
 // LayoutGrid holds all the computed layout information for a table.
@@ -34,31 +33,41 @@ type LayoutGrid struct {
 
 // NewLayoutGrid creates and initializes a LayoutGrid.
 func NewLayoutGrid(initialEstimatedRows int, initialEstimatedCols int) *LayoutGrid {
-	if initialEstimatedRows == 0 {
-		initialEstimatedCols = 0
-	} else if initialEstimatedCols == 0 && initialEstimatedRows > 0 {
-		initialEstimatedCols = 1
-	}
-
 	lg := &LayoutGrid{
 		NumLogicalRows: initialEstimatedRows,
 		NumLogicalCols: initialEstimatedCols,
 		GridCells:      make([]GridCellInfo, 0),
-		ColumnWidths:   make([]float64, initialEstimatedCols),
-		RowHeights:     make([]float64, initialEstimatedRows),
+	}
+
+	// Initialize slices only if dimensions are greater than 0
+	if initialEstimatedCols > 0 {
+		lg.ColumnWidths = make([]float64, initialEstimatedCols)
+	} else {
+		lg.ColumnWidths = make([]float64, 0) // Explicitly empty if 0 cols
+	}
+	if initialEstimatedRows > 0 {
+		lg.RowHeights = make([]float64, initialEstimatedRows)
+	} else {
+		lg.RowHeights = make([]float64, 0) // Explicitly empty if 0 rows
 	}
 
 	lg.OccupationMap = make([][]*table.Cell, initialEstimatedRows)
 	for i := 0; i < initialEstimatedRows; i++ {
-		lg.OccupationMap[i] = make([]*table.Cell, initialEstimatedCols)
+		if initialEstimatedCols > 0 {
+			lg.OccupationMap[i] = make([]*table.Cell, initialEstimatedCols)
+		} else {
+			lg.OccupationMap[i] = make([]*table.Cell, 0) // Explicitly empty row if 0 cols
+		}
 	}
 	return lg
 }
 
 // ensureCapacity expands the LayoutGrid's internal structures.
 func (lg *LayoutGrid) ensureCapacity(targetMaxRow, targetMaxCol int) {
+	// Ensure row capacity
 	if targetMaxRow >= lg.NumLogicalRows {
 		newNumLogicalRows := targetMaxRow + 1
+		// Expand RowHeights
 		if newNumLogicalRows > cap(lg.RowHeights) {
 			newRowHeights := make([]float64, newNumLogicalRows, newNumLogicalRows*2)
 			copy(newRowHeights, lg.RowHeights)
@@ -66,6 +75,8 @@ func (lg *LayoutGrid) ensureCapacity(targetMaxRow, targetMaxCol int) {
 		} else {
 			lg.RowHeights = lg.RowHeights[:newNumLogicalRows]
 		}
+
+		// Expand OccupationMap rows
 		if newNumLogicalRows > cap(lg.OccupationMap) {
 			newOccupationMap := make([][]*table.Cell, newNumLogicalRows, newNumLogicalRows*2)
 			copy(newOccupationMap, lg.OccupationMap)
@@ -73,14 +84,22 @@ func (lg *LayoutGrid) ensureCapacity(targetMaxRow, targetMaxCol int) {
 		} else {
 			lg.OccupationMap = lg.OccupationMap[:newNumLogicalRows]
 		}
+
 		for i := lg.NumLogicalRows; i < newNumLogicalRows; i++ {
-			lg.OccupationMap[i] = make([]*table.Cell, lg.NumLogicalCols)
+			// New rows are created with the current number of logical columns
+			if lg.NumLogicalCols > 0 {
+				lg.OccupationMap[i] = make([]*table.Cell, lg.NumLogicalCols)
+			} else {
+				lg.OccupationMap[i] = make([]*table.Cell, 0) // Empty row if no columns yet
+			}
 		}
 		lg.NumLogicalRows = newNumLogicalRows
 	}
 
+	// Ensure column capacity (for all rows)
 	if targetMaxCol >= lg.NumLogicalCols {
 		newNumLogicalCols := targetMaxCol + 1
+		// Expand ColumnWidths
 		if newNumLogicalCols > cap(lg.ColumnWidths) {
 			newColWidths := make([]float64, newNumLogicalCols, newNumLogicalCols*2)
 			copy(newColWidths, lg.ColumnWidths)
@@ -88,28 +107,26 @@ func (lg *LayoutGrid) ensureCapacity(targetMaxRow, targetMaxCol int) {
 		} else {
 			lg.ColumnWidths = lg.ColumnWidths[:newNumLogicalCols]
 		}
-		for i := 0; i < lg.NumLogicalRows; i++ {
-			currentLen := 0
-			if lg.OccupationMap[i] != nil {
-				currentLen = len(lg.OccupationMap[i])
-			}
 
-			if newNumLogicalCols > cap(lg.OccupationMap[i]) {
-				newRow := make([]*table.Cell, newNumLogicalCols, newNumLogicalCols*2)
-				if lg.OccupationMap[i] != nil {
-					copy(newRow, lg.OccupationMap[i])
-				}
-				lg.OccupationMap[i] = newRow
-			} else {
-				if lg.OccupationMap[i] == nil {
+		// Expand OccupationMap columns for all existing rows
+		for i := 0; i < lg.NumLogicalRows; i++ {
+			// If a row was nil (e.g. new row from row expansion not fully initialized for columns yet)
+			if lg.OccupationMap[i] == nil {
+				if newNumLogicalCols > 0 {
 					lg.OccupationMap[i] = make([]*table.Cell, newNumLogicalCols)
 				} else {
-					// Slice to expand. If newNumLogicalCols is larger, this will expose zero values.
-					lg.OccupationMap[i] = lg.OccupationMap[i][:newNumLogicalCols]
-					// Ensure newly exposed elements are nil (though they should be by default for pointer types)
-					for k := currentLen; k < newNumLogicalCols; k++ {
-						lg.OccupationMap[i][k] = nil
-					}
+					lg.OccupationMap[i] = make([]*table.Cell, 0)
+				}
+			} else if newNumLogicalCols > cap(lg.OccupationMap[i]) {
+				newRow := make([]*table.Cell, newNumLogicalCols, newNumLogicalCols*2)
+				copy(newRow, lg.OccupationMap[i])
+				lg.OccupationMap[i] = newRow
+			} else { // Current capacity is sufficient, just extend the slice length
+				currentLen := len(lg.OccupationMap[i])
+				lg.OccupationMap[i] = lg.OccupationMap[i][:newNumLogicalCols]
+				// Ensure newly exposed elements are nil
+				for k := currentLen; k < newNumLogicalCols; k++ {
+					lg.OccupationMap[i][k] = nil
 				}
 			}
 		}
@@ -117,57 +134,85 @@ func (lg *LayoutGrid) ensureCapacity(targetMaxRow, targetMaxCol int) {
 	}
 }
 
-// PopulateOccupationMap processes the input table and maps its cells.
+// PopulateOccupationMap processes the input table and maps its cells (respecting spans)
+// onto a 2D grid representation (OccupationMap) within a LayoutGrid.
 func PopulateOccupationMap(inputTable *table.Table) (*LayoutGrid, error) {
 	if inputTable == nil {
 		return NewLayoutGrid(0, 0), nil
 	}
+    if len(inputTable.Rows) == 0 {
+        return NewLayoutGrid(0,0), nil
+    }
+
 	estRows := len(inputTable.Rows)
 	estCols := 0
-	if estRows > 0 {
-		for _, r := range inputTable.Rows {
-			if len(r.Cells) > estCols {
-				estCols = len(r.Cells)
-			}
+	for _, r := range inputTable.Rows {
+		if len(r.Cells) > estCols {
+			estCols = len(r.Cells)
 		}
 	}
+    // estCols can remain 0 if all rows are empty. NewLayoutGrid handles this.
 	lg := NewLayoutGrid(estRows, estCols)
 
 	for rIdx, inputRow := range inputTable.Rows {
-		currentScanC := 0
-		for cIdx, cellToPlace := range inputRow.Cells {
-			lg.ensureCapacity(rIdx, currentScanC)
-			resolvedC := currentScanC
-			for {
-				if resolvedC >= lg.NumLogicalCols {
-					lg.ensureCapacity(rIdx, resolvedC)
-					break
-				}
-				if lg.OccupationMap[rIdx][resolvedC] == nil {
-					break
-				}
-				resolvedC++
-			}
-			targetMaxRow := rIdx + cellToPlace.Rowspan - 1
-			targetMaxCol := resolvedC + cellToPlace.Colspan - 1
-			lg.ensureCapacity(targetMaxRow, targetMaxCol)
+		gridColCursor := 0 // Tracks the next logical grid column index to try for the current inputRow.
 
+		// Ensure the current row rIdx exists in the occupation map.
+		// MaxCol is NumLogicalCols-1. If NumLogicalCols is 0, this will pass -1.
+		// ensureCapacity should handle targetMaxCol < 0 by doing nothing for column expansion.
+		currentMaxColIdx := lg.NumLogicalCols -1
+		if currentMaxColIdx < 0 { currentMaxColIdx = 0 } // Ensure at least 0 for initial capacity check
+		lg.ensureCapacity(rIdx, currentMaxColIdx)
+
+
+		for cInputIdx, _ := range inputRow.Cells { // Changed cellToPlaceData to _
+			// cellToPlace is a pointer to the cell in the original table structure.
+			cellToPlace := &inputTable.Rows[rIdx].Cells[cInputIdx]
+
+			targetGridR := rIdx
+			actualTargetGridC := gridColCursor
+
+            // Ensure capacity up to where we *might* scan or place.
+            lg.ensureCapacity(targetGridR, actualTargetGridC)
+
+			// Scan for the first free column in targetGridR, starting from actualTargetGridC.
+			// Skips slots already occupied by rowspans from cells in previous rows.
+			for {
+				if actualTargetGridC >= lg.NumLogicalCols { // If we scan past existing columns
+					lg.ensureCapacity(targetGridR, actualTargetGridC) // Expand to this column
+					break // This new column is free
+				}
+				if lg.OccupationMap[targetGridR][actualTargetGridC] == nil {
+					break // Found a free slot
+				}
+				actualTargetGridC++ // Slot occupied, try next one
+                // Ensure capacity as we scan right, in case we hit the edge of known columns
+                // This is implicitly handled by the check actualTargetGridC >= lg.NumLogicalCols at loop start
+			}
+
+			// Ensure grid has capacity for this cell's full span starting at (targetGridR, actualTargetGridC)
+			lg.ensureCapacity(targetGridR+cellToPlace.Rowspan-1, actualTargetGridC+cellToPlace.Colspan-1)
+
+			// Mark occupation
 			for rOffset := 0; rOffset < cellToPlace.Rowspan; rOffset++ {
 				for cOffset := 0; cOffset < cellToPlace.Colspan; cOffset++ {
-					mapR, mapC := rIdx+rOffset, resolvedC+cOffset
-					if lg.OccupationMap[mapR][mapC] != nil {
-						log.Printf("Warning: Overlap detected. Cell from input row %d, input col %d (title: '%s') is overwriting existing cell (title: '%s') in grid slot (%d,%d).",
-							rIdx, cIdx, cellToPlace.Title, lg.OccupationMap[mapR][mapC].Title, mapR, mapC)
+					mapR := targetGridR + rOffset
+					mapC := actualTargetGridC + cOffset
+
+					if lg.OccupationMap[mapR][mapC] != nil && lg.OccupationMap[mapR][mapC] != cellToPlace {
+						log.Printf("Warning: Overlap! Cell '%s' (input r%d, c%d) at grid (%d,%d) overwriting cell '%s'.",
+						    cellToPlace.Title, rIdx, cInputIdx, mapR, mapC, lg.OccupationMap[mapR][mapC].Title)
 					}
-					// Store the address of the cell from the original slice
-					lg.OccupationMap[mapR][mapC] = &inputRow.Cells[cIdx]
+					lg.OccupationMap[mapR][mapC] = cellToPlace
 				}
 			}
-			currentScanC = resolvedC + cellToPlace.Colspan
+
+			gridColCursor = actualTargetGridC + cellToPlace.Colspan
 		}
 	}
 	return lg, nil
 }
+
 
 // LayoutConstants groups parameters needed for layout calculations.
 type LayoutConstants struct {
@@ -332,26 +377,17 @@ func calculateCellContentSizeInternal(
 	return actualMaxWidthUsed, currentTotalHeight, nil
 }
 
-// CalculateFinalCellLayouts computes the final X, Y, Width, and Height for each unique cell
-// on the canvas, based on determined ColumnWidths and RowHeights.
-// It populates lg.GridCells and sets lg.CanvasWidth/Height.
+// CalculateFinalCellLayouts computes the final X, Y, Width, and Height for each unique cell.
 func (lg *LayoutGrid) CalculateFinalCellLayouts(margin float64) {
-	lg.GridCells = make([]GridCellInfo, 0) // Clear/reset previous layout info
+	lg.GridCells = make([]GridCellInfo, 0)
 
 	if lg.NumLogicalCols == 0 || lg.NumLogicalRows == 0 {
-		lg.CanvasWidth = margin * 2
-		lg.CanvasHeight = margin * 2
-		if lg.CanvasWidth < 1 { lg.CanvasWidth = 1 } // Ensure minimum 1px canvas
-		if lg.CanvasHeight < 1 { lg.CanvasHeight = 1 }
+		lg.CanvasWidth = margin * 2; if lg.CanvasWidth < 1 { lg.CanvasWidth = 1 }
+		lg.CanvasHeight = margin * 2; if lg.CanvasHeight < 1 { lg.CanvasHeight = 1 }
 		return
 	}
 
-	// Identify unique cells and their top-left starting grid positions.
 	uniqueCellStartPositions := make(map[*table.Cell]struct{ r, c int })
-	// Iterate OccupationMap to find the first occurrence (top-left) of each cell.
-	// This assumes that the first time we encounter a cell pointer during a row-major scan,
-	// it's at its top-left defining slot. This holds if PopulateOccupationMap correctly
-	// places cells starting from their top-left.
 	for r := 0; r < lg.NumLogicalRows; r++ {
 		for c := 0; c < lg.NumLogicalCols; c++ {
 			cellPtr := lg.OccupationMap[r][c]
@@ -364,71 +400,36 @@ func (lg *LayoutGrid) CalculateFinalCellLayouts(margin float64) {
 	}
 
 	for cell, startPos := range uniqueCellStartPositions {
-		// Calculate X position by summing widths of preceding columns
 		currentX := margin
 		for i := 0; i < startPos.c; i++ {
-			if i < len(lg.ColumnWidths) {
-				currentX += lg.ColumnWidths[i]
-			}
+			if i < len(lg.ColumnWidths) { currentX += lg.ColumnWidths[i] }
 		}
-
-		// Calculate Y position by summing heights of preceding rows
 		currentY := margin
 		for i := 0; i < startPos.r; i++ {
-			if i < len(lg.RowHeights) {
-				currentY += lg.RowHeights[i]
-			}
+			if i < len(lg.RowHeights) { currentY += lg.RowHeights[i] }
 		}
-
-		// Calculate Width for the cell based on spanned columns
 		cellDrawingWidth := 0.0
 		for i := 0; i < cell.Colspan; i++ {
 			colIdx := startPos.c + i
-			if colIdx < len(lg.ColumnWidths) {
-				cellDrawingWidth += lg.ColumnWidths[colIdx]
-			} else {
-				log.Printf("Warning: Column index %d (for cell '%s' starting at %d,%d spanning %d cols) out of bounds (%d columns). Using available widths.",
-				    colIdx, cell.Title, startPos.r, startPos.c, cell.Colspan, len(lg.ColumnWidths))
-			}
+			if colIdx < len(lg.ColumnWidths) { cellDrawingWidth += lg.ColumnWidths[colIdx]
+			} else { log.Printf("Warning: Col index %d (for cell '%s') out of bounds.", colIdx, cell.Title) }
 		}
-
-		// Calculate Height for the cell based on spanned rows
 		cellDrawingHeight := 0.0
 		for i := 0; i < cell.Rowspan; i++ {
 			rowIdx := startPos.r + i
-			if rowIdx < len(lg.RowHeights) {
-				cellDrawingHeight += lg.RowHeights[rowIdx]
-			} else {
-				log.Printf("Warning: Row index %d (for cell '%s' starting at %d,%d spanning %d rows) out of bounds (%d rows). Using available heights.",
-				    rowIdx, cell.Title, startPos.r, startPos.c, cell.Rowspan, len(lg.RowHeights))
-			}
+			if rowIdx < len(lg.RowHeights) { cellDrawingHeight += lg.RowHeights[rowIdx]
+			} else { log.Printf("Warning: Row index %d (for cell '%s') out of bounds.", rowIdx, cell.Title) }
 		}
 
-		gridCell := GridCellInfo{
-			OriginalCell: cell,
-			X:            currentX,
-			Y:            currentY,
-			Width:        cellDrawingWidth,
-			Height:       cellDrawingHeight,
-			GridR:        startPos.r,
-			GridC:        startPos.c,
-		}
-		lg.GridCells = append(lg.GridCells, gridCell)
+		lg.GridCells = append(lg.GridCells, GridCellInfo{
+			OriginalCell: cell, X: currentX, Y: currentY,
+			Width: cellDrawingWidth, Height: cellDrawingHeight,
+			GridR: startPos.r, GridC: startPos.c,
+		})
 	}
 
-	// Calculate total canvas width and height
-	totalColWidth := 0.0
-	for _, w := range lg.ColumnWidths {
-		totalColWidth += w
-	}
-	lg.CanvasWidth = totalColWidth + (margin * 2)
-
-	totalRowHeight := 0.0
-	for _, h := range lg.RowHeights {
-		totalRowHeight += h
-	}
-	lg.CanvasHeight = totalRowHeight + (margin * 2)
-
-    if lg.CanvasWidth < 1 { lg.CanvasWidth = 1 } // Ensure minimum 1px canvas
-    if lg.CanvasHeight < 1 { lg.CanvasHeight = 1 }
+	totalColWidth := 0.0; for _, w := range lg.ColumnWidths { totalColWidth += w }
+	lg.CanvasWidth = totalColWidth + (margin * 2); if lg.CanvasWidth < 1 { lg.CanvasWidth = 1 }
+	totalRowHeight := 0.0; for _, h := range lg.RowHeights { totalRowHeight += h }
+	lg.CanvasHeight = totalRowHeight + (margin * 2); if lg.CanvasHeight < 1 { lg.CanvasHeight = 1 }
 }
