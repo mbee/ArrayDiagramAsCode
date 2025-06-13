@@ -23,7 +23,7 @@ func TestRenderToPNG_FileCreation(t *testing.T) {
 		}
 	}()
 
-	err := RenderToPNG(testTable, outputPath)
+	err := RenderToPNG(&testTable, outputPath) // Pass pointer
 	if err != nil {
 		t.Fatalf("RenderToPNG failed: %v", err)
 	}
@@ -47,7 +47,7 @@ func TestRenderToPNG_EmptyTable(t *testing.T) {
 		}
 	}()
 
-	err := RenderToPNG(emptyTable, outputPath)
+	err := RenderToPNG(&emptyTable, outputPath) // Pass pointer
 	if err != nil {
 		t.Fatalf("RenderToPNG failed for empty table: %v", err)
 	}
@@ -92,7 +92,7 @@ func TestRenderToPNG_InvalidColorHandling(t *testing.T) {
 	// Current png_renderer logs errors for invalid colors and uses defaults.
 	// It should not return an error to RenderToPNG for color parsing issues.
 	// The manual parseHexColor implemented returns an error, but RenderToPNG logs it and proceeds.
-	err := RenderToPNG(tableWithInvalidColor, outputPath)
+	err := RenderToPNG(&tableWithInvalidColor, outputPath) // Pass pointer
 	if err != nil {
 		// This test assumes that color parsing errors are handled gracefully by the renderer
 		// (i.e., logged and defaults used) rather than propagated as fatal errors from RenderToPNG.

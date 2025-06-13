@@ -23,7 +23,7 @@ func main() {
 
 	// Render the table to PNG
 	outputFilePath := "output.png"
-	err = renderer.RenderToPNG(tableData, outputFilePath) // Using RenderToPNG
+	err = renderer.RenderToPNG(&tableData, outputFilePath) // Pass address of tableData
 	if err != nil {
 		// Log the error but don't necessarily make it fatal if text rendering can still proceed.
 		// However, for this task, if PNG rendering fails, it's a primary concern.
