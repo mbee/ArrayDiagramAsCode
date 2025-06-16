@@ -25,6 +25,8 @@ type Cell struct {
 	Colspan         int    // For merged cells horizontally
 	Rowspan         int    // For merged cells vertically
 	BackgroundColor string // Specific background color for this cell, e.g., "#RRGGBB"
+	IsTableRef      bool   // New: Flag to indicate this cell is a table reference
+	TableRefID      string // New: ID of the table to render in this cell
 }
 
 // NewCell creates a new Cell with default values.
@@ -47,6 +49,7 @@ type Row struct {
 
 // Table represents a table, including its data and global settings.
 type Table struct {
+	ID       string // New field for the table identifier
 	Title    string
 	Rows     []Row
 	Settings GlobalSettings // Holds global settings for the table
@@ -63,3 +66,9 @@ func NewTableWithDefaults() Table {
     }
 }
 */
+
+// AllTables holds all parsed tables from an input source and identifies the main one.
+type AllTables struct {
+	Tables      map[string]Table // Stores all parsed tables, keyed by their ID.
+	MainTableID string           // ID of the table to be rendered as the primary one.
+}

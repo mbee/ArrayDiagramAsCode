@@ -51,13 +51,16 @@ func parseHexColor(s string) (color.Color, error) {
 }
 
 // RenderToPNG generates a PNG image of the table using dynamic layout.
-func RenderToPNG(t *table.Table, outputPath string) error {
-	if t == nil {
-		return fmt.Errorf("input table is nil")
+// It now accepts the mainTable to render and allTables for potential future use (e.g., rendering nested tables).
+func RenderToPNG(mainTable *table.Table, allTables map[string]table.Table, outputPath string) error {
+	if mainTable == nil {
+		return fmt.Errorf("input mainTable is nil")
 	}
 
 	// --- 1. Layout Calculation Phase ---
-	layoutGrid, err := PopulateOccupationMap(t) // Assumes t is not nil
+	// For now, layout calculation is only for the mainTable.
+	// Nested table rendering will require deeper changes in layout calculation.
+	layoutGrid, err := PopulateOccupationMap(mainTable) // Assumes mainTable is not nil
 	if err != nil {
 		return fmt.Errorf("failed to populate occupation map: %w", err)
 	}
@@ -69,7 +72,7 @@ func RenderToPNG(t *table.Table, outputPath string) error {
 		if dcHeight < 1 { dcHeight = 1 }
 
 		dc := gg.NewContext(dcWidth, dcHeight)
-		tableBG := t.Settings.TableBackgroundColor
+		tableBG := mainTable.Settings.TableBackgroundColor
 		if tableBG == "" { tableBG = "#FFFFFF" } // Default to white if empty
 
 		if col, errBg := parseHexColor(tableBG); errBg == nil {
@@ -94,7 +97,7 @@ func RenderToPNG(t *table.Table, outputPath string) error {
 		MinCellHeight:        defaultMinCellHeight,
 	}
 
-	err = layoutGrid.CalculateColumnWidthsAndRowHeights(layoutConsts)
+	err = layoutGrid.CalculateColumnWidthsAndRowHeights(layoutConsts, allTables)
 	if err != nil {
 		return fmt.Errorf("failed to calculate column/row sizes: %w", err)
 	}
@@ -110,94 +113,209 @@ func RenderToPNG(t *table.Table, outputPath string) error {
 	dc := gg.NewContext(canvasW, canvasH)
 
 	// --- 3. Drawing Phase ---
-	// Set table background
-	tableBgColorHex := t.Settings.TableBackgroundColor
-	if tableBgColorHex == "" { tableBgColorHex = "#FFFFFF" } // Default to white if not specified
-
-	if col, errBg := parseHexColor(tableBgColorHex); errBg == nil {
+	// Set overall canvas background based on mainTable's settings or default white
+	canvasBgColorHex := mainTable.Settings.TableBackgroundColor
+	if canvasBgColorHex == "" {
+		canvasBgColorHex = "#FFFFFF" // Default canvas background to white
+	}
+	if col, errBg := parseHexColor(canvasBgColorHex); errBg == nil {
 		dc.SetColor(col)
-		dc.Clear()
+		dc.Clear() // Clear the entire canvas with this color
 	} else {
-		log.Printf("Error parsing TableBackgroundColor '%s': %v. Using white.", t.Settings.TableBackgroundColor, errBg)
-		dc.SetColor(color.White); dc.Clear()
+		log.Printf("Error parsing TableBackgroundColor '%s' for main canvas: %v. Using white.", mainTable.Settings.TableBackgroundColor, errBg)
+		dc.SetColor(color.White)
+		dc.Clear()
 	}
 
-	if errFont := dc.LoadFontFace(layoutConsts.FontPath, layoutConsts.FontSize); errFont != nil {
-		log.Printf("Error loading font '%s': %v. Text rendering may be affected.", layoutConsts.FontPath, errFont)
+	// Call the recursive drawing function for the main table
+	err = drawTableItself(dc, mainTable, layoutGrid, allTables, layoutConsts)
+	if err != nil {
+		return fmt.Errorf("error drawing main table: %w", err)
 	}
 
-	for _, gridCell := range layoutGrid.GridCells {
+	return dc.SavePNG(outputPath)
+}
+
+// drawTableItself handles the rendering of a given table and its cells, including nested tables.
+func drawTableItself(dc *gg.Context, tableToDraw *table.Table, lg *LayoutGrid, allTables map[string]table.Table, lConsts LayoutConstants) error {
+	// Set background for the current table being drawn, if specified in its settings.
+	// This allows nested tables to have their own distinct backgrounds.
+	// If not specified, it remains transparent to what's underneath (parent cell or main canvas).
+	if tableToDraw.Settings.TableBackgroundColor != "" {
+		if col, err := parseHexColor(tableToDraw.Settings.TableBackgroundColor); err == nil {
+			// Create a temporary context to draw this table's background only within its bounds
+			// This is tricky because dc is for the parent. We need to draw onto dc at tableToDraw's location.
+			// For now, this function assumes `dc` is already offset or is the main canvas for the main table.
+			// When called recursively, the subDc is sized for the inner table.
+			// So, clearing subDc with its own background is correct.
+			// This part is more relevant when subDc is passed.
+			// If dc is the main canvas, this logic is fine for the first call if tableToDraw is mainTable.
+			// If dc is a sub-context, this will fill that sub-context.
+			dc.SetColor(col)
+			dc.Clear()
+		} else {
+			log.Printf("Error parsing TableBackgroundColor '%s' for table '%s': %v. Skipping custom BG.", tableToDraw.Settings.TableBackgroundColor, tableToDraw.ID, err)
+		}
+	}
+
+	if errFont := dc.LoadFontFace(lConsts.FontPath, lConsts.FontSize); errFont != nil {
+		log.Printf("Error loading font '%s' for table '%s': %v. Text rendering may be affected.", lConsts.FontPath, tableToDraw.ID, errFont)
+		// Continue rendering even if font loading fails, default font might be used or text might be missing.
+	}
+
+	for _, gridCell := range lg.GridCells {
 		cell := gridCell.OriginalCell
 
+		// Draw cell background
 		cellBgColorHex := cell.BackgroundColor
 		if cellBgColorHex == "" { // If cell has no specific color, use table's default cell BG
-			cellBgColorHex = t.Settings.DefaultCellBackgroundColor
+			cellBgColorHex = tableToDraw.Settings.DefaultCellBackgroundColor
 		}
 		if cellBgColorHex == "" { // If table's default cell BG is also empty, fallback
-		    cellBgColorHex = "#FFFFFF" // Ultimate fallback to white
+			cellBgColorHex = "#FFFFFF" // Ultimate fallback to white for cell background
 		}
-
 		cellBg, errBgParse := parseHexColor(cellBgColorHex)
 		if errBgParse != nil {
-			log.Printf("Error parsing cell background color '%s' for cell '%s': %v. Defaulting to white.", cellBgColorHex, cell.Title, errBgParse)
+			log.Printf("Error parsing cell background color '%s' for cell '%s' (table '%s'): %v. Defaulting to white.", cellBgColorHex, cell.Title, tableToDraw.ID, errBgParse)
 			cellBg = color.White
 		}
-
 		dc.SetColor(cellBg)
 		dc.DrawRoundedRectangle(gridCell.X, gridCell.Y, gridCell.Width, gridCell.Height, defaultCornerRadius)
 		dc.Fill()
 
-		edgeColorHex := t.Settings.EdgeColor
-		if edgeColorHex == "" { edgeColorHex = "#000000" } // Default edge to black
-
+		// Draw cell border
+		edgeColorHex := tableToDraw.Settings.EdgeColor
+		if edgeColorHex == "" {
+			edgeColorHex = "#000000"
+		} // Default edge to black
 		edgeCol, errEdgeParse := parseHexColor(edgeColorHex)
 		if errEdgeParse != nil {
-			log.Printf("Error parsing edge color '%s': %v. Defaulting to black.", t.Settings.EdgeColor, errEdgeParse)
+			log.Printf("Error parsing edge color '%s' for table '%s': %v. Defaulting to black.", tableToDraw.Settings.EdgeColor, tableToDraw.ID, errEdgeParse)
 			edgeCol = color.Black
 		}
 		dc.SetColor(edgeCol)
-		// Ensure edge thickness is at least 1 if not specified or zero from settings
-		edgeThickness := float64(t.Settings.EdgeThickness)
-		if edgeThickness <= 0 { edgeThickness = 1.0 }
+		edgeThickness := float64(tableToDraw.Settings.EdgeThickness)
+		if edgeThickness <= 0 {
+			edgeThickness = 1.0
+		}
 		dc.SetLineWidth(edgeThickness)
 		dc.DrawRoundedRectangle(gridCell.X, gridCell.Y, gridCell.Width, gridCell.Height, defaultCornerRadius)
 		dc.Stroke()
 
-		textColor := color.Black
-		dc.SetColor(textColor)
-
-		textStartX := gridCell.X + layoutConsts.Padding
-		currentTextY := gridCell.Y + layoutConsts.Padding
-
-        textAvailableWidth := gridCell.Width - (2 * layoutConsts.Padding)
-        if textAvailableWidth < 0 { textAvailableWidth = 0 }
-
-		lineVisualHeight := layoutConsts.FontSize * layoutConsts.LineHeightMultiplier
-
-		if cell.Title != "" {
-			titleText := "[" + cell.Title + "]"
-			titleLines := dc.WordWrap(titleText, textAvailableWidth)
-			for _, line := range titleLines {
-                if currentTextY + lineVisualHeight <= gridCell.Y + gridCell.Height - layoutConsts.Padding + epsilon {
-				    dc.DrawString(line, textStartX, currentTextY)
-                    currentTextY += lineVisualHeight
-                } else { break }
+		if cell.IsTableRef {
+			log.Printf("Cell '%s' in table '%s' is ref to table '%s'. Drawing inner table.", cell.Title, tableToDraw.ID, cell.TableRefID)
+			if cell.TableRefID == "" {
+				log.Printf("Warning: Cell '%s' in table '%s' is IsTableRef but TableRefID is empty. Skipping rendering.", cell.Title, tableToDraw.ID)
+				continue
 			}
-		}
-
-		if cell.Content != "" {
-			if cell.Title != "" && (currentTextY > gridCell.Y + layoutConsts.Padding + epsilon) {
-				currentTextY += lineVisualHeight * 0.25
+			refTable, ok := allTables[cell.TableRefID]
+			if !ok {
+				log.Printf("Warning: Referenced table ID '%s' not found for cell '%s' in table '%s'. Skipping rendering.", cell.TableRefID, cell.Title, tableToDraw.ID)
+				continue
 			}
-			contentLines := dc.WordWrap(cell.Content, textAvailableWidth)
-			for _, line := range contentLines {
-                if currentTextY + lineVisualHeight <= gridCell.Y + gridCell.Height - layoutConsts.Padding + epsilon {
-				    dc.DrawString(line, textStartX, currentTextY)
-				    currentTextY += lineVisualHeight
-                } else { break }
+			// TODO: Add check for self-reference or cyclical references if parent table ID is available.
+
+			innerLg, mapErr := PopulateOccupationMap(&refTable)
+			if mapErr != nil {
+				log.Printf("Error populating occupation map for inner table '%s' (cell '%s' in table '%s'): %v. Skipping.", refTable.ID, cell.Title, tableToDraw.ID, mapErr)
+				continue
+			}
+			if innerLg.NumLogicalRows == 0 || innerLg.NumLogicalCols == 0 {
+				log.Printf("Info: Inner table '%s' for cell '%s' in table '%s' is empty. Skipping.", refTable.ID, cell.Title, tableToDraw.ID)
+				continue
+			}
+
+			calcErr := innerLg.CalculateColumnWidthsAndRowHeights(lConsts, allTables)
+			if calcErr != nil {
+				log.Printf("Error calculating layout for inner table '%s' (cell '%s' in table '%s'): %v. Skipping.", refTable.ID, cell.Title, tableToDraw.ID, calcErr)
+				continue
+			}
+			innerLg.CalculateFinalCellLayouts(0) // 0 margin for sub-tables
+
+			innerDcWidth := int(innerLg.CanvasWidth)
+			innerDcHeight := int(innerLg.CanvasHeight)
+
+			if innerDcWidth <= 0 || innerDcHeight <= 0 {
+				log.Printf("Warning: Inner table '%s' for cell '%s' in table '%s' has zero or negative dimensions (W:%d, H:%d). Skipping.", refTable.ID, cell.Title, tableToDraw.ID, innerDcWidth, innerDcHeight)
+				continue
+			}
+			subDc := gg.NewContext(innerDcWidth, innerDcHeight)
+
+			// Recursive call to draw the inner table onto the sub-context
+			drawErr := drawTableItself(subDc, &refTable, innerLg, allTables, lConsts)
+			if drawErr != nil {
+				log.Printf("Error drawing inner table '%s' (cell '%s' in table '%s'): %v. Skipping.", refTable.ID, cell.Title, tableToDraw.ID, drawErr)
+				continue
+			}
+			// Draw the fully rendered inner table (subDc.Image()) onto the current dc at the correct position
+			// The position is gridCell.X/Y (top-left of the cell in currentLg) plus padding.
+			dc.DrawImage(subDc.Image(), int(gridCell.X+lConsts.Padding), int(gridCell.Y+lConsts.Padding))
+
+			// Draw special border for the inner table
+			borderColorHex := tableToDraw.Settings.EdgeColor // Use parent table's edge color
+			if borderColorHex == "" {
+				borderColorHex = "#000000" // Default to black
+			}
+			parsedBorderColor, err := parseHexColor(borderColorHex)
+			if err != nil {
+				log.Printf("Error parsing border color '%s' for inner table frame: %v. Defaulting to black.", borderColorHex, err)
+				parsedBorderColor = color.Black
+			}
+			dc.SetColor(parsedBorderColor)
+			dc.SetLineWidth(1.0)
+			dc.SetDash() // Ensure solid line
+
+			borderX := gridCell.X + lConsts.Padding
+			borderY := gridCell.Y + lConsts.Padding
+			borderWidth := innerLg.CanvasWidth  // Actual width of the drawn inner table
+			borderHeight := innerLg.CanvasHeight // Actual height of the drawn inner table
+
+			// Ensure border dimensions are positive before drawing
+			if borderWidth > 0 && borderHeight > 0 {
+				dc.DrawRectangle(borderX, borderY, borderWidth, borderHeight)
+				dc.Stroke()
+			}
+
+		} else {
+			// Original text rendering logic for non-reference cells
+			textColor := color.Black // Or from settings
+			dc.SetColor(textColor)
+
+			textStartX := gridCell.X + lConsts.Padding
+			currentTextY := gridCell.Y + lConsts.Padding
+			textAvailableWidth := gridCell.Width - (2 * lConsts.Padding)
+			if textAvailableWidth < 0 {
+				textAvailableWidth = 0
+			}
+			lineVisualHeight := lConsts.FontSize * lConsts.LineHeightMultiplier
+
+			if cell.Title != "" {
+				titleText := "[" + cell.Title + "]"
+				titleLines := dc.WordWrap(titleText, textAvailableWidth)
+				for _, line := range titleLines {
+					if currentTextY+lineVisualHeight <= gridCell.Y+gridCell.Height-lConsts.Padding+epsilon {
+						dc.DrawString(line, textStartX, currentTextY)
+						currentTextY += lineVisualHeight
+					} else {
+						break
+					}
+				}
+			}
+			if cell.Content != "" {
+				if cell.Title != "" && (currentTextY > gridCell.Y+lConsts.Padding+epsilon) {
+					currentTextY += lineVisualHeight * 0.25
+				}
+				contentLines := dc.WordWrap(cell.Content, textAvailableWidth)
+				for _, line := range contentLines {
+					if currentTextY+lineVisualHeight <= gridCell.Y+gridCell.Height-lConsts.Padding+epsilon {
+						dc.DrawString(line, textStartX, currentTextY)
+						currentTextY += lineVisualHeight
+					} else {
+						break
+					}
+				}
 			}
 		}
 	}
-
-	return dc.SavePNG(outputPath)
+	return nil
 }

@@ -8,28 +8,107 @@ import (
 	"strings"
 )
 
-// Parse takes a string input and attempts to parse it into a Table object.
-// It now also parses global table settings from the title line and
+// ParseAllText takes a string input that may contain multiple table definitions
+// and parses them into an AllTables struct.
+func ParseAllText(fullInput string) (table.AllTables, error) {
+	allTables := table.AllTables{Tables: make(map[string]table.Table)}
+	trimmedFullInput := strings.TrimSpace(fullInput)
+	if trimmedFullInput == "" {
+		return allTables, nil // Return empty AllTables if input is empty
+	}
+
+	lines := strings.Split(trimmedFullInput, "\n")
+	var currentTableLines []string
+	var tableStartLineNumber int
+
+	for i, line := range lines {
+		if strings.HasPrefix(line, "table:") {
+			// If currentTableLines has content, then a previous table definition has ended.
+			if len(currentTableLines) > 0 {
+				tableDef := strings.Join(currentTableLines, "\n")
+				parsedTable, err := parseSingleTableDefinition(tableDef)
+				if err != nil {
+					return table.AllTables{}, fmt.Errorf("error parsing table starting at line %d: %w", tableStartLineNumber, err)
+				}
+				if parsedTable.ID == "" {
+					return table.AllTables{}, fmt.Errorf("parsed table starting at line %d is missing an ID", tableStartLineNumber)
+				}
+				if _, exists := allTables.Tables[parsedTable.ID]; exists {
+					return table.AllTables{}, fmt.Errorf("duplicate table ID '%s' found (originally from table at line %d)", parsedTable.ID, tableStartLineNumber)
+				}
+				allTables.Tables[parsedTable.ID] = parsedTable
+				if allTables.MainTableID == "" {
+					allTables.MainTableID = parsedTable.ID
+				}
+				currentTableLines = nil // Reset for the next table
+			}
+			tableStartLineNumber = i + 1 // Store line number (1-indexed) for error reporting
+			currentTableLines = append(currentTableLines, line)
+		} else if len(currentTableLines) > 0 {
+			// Only append lines if we are currently inside a table definition
+			currentTableLines = append(currentTableLines, line)
+		}
+	}
+
+	// Process the last table definition if any
+	if len(currentTableLines) > 0 {
+		tableDef := strings.Join(currentTableLines, "\n")
+		parsedTable, err := parseSingleTableDefinition(tableDef)
+		if err != nil {
+			return table.AllTables{}, fmt.Errorf("error parsing table starting at line %d: %w", tableStartLineNumber, err)
+		}
+		if parsedTable.ID == "" {
+			return table.AllTables{}, fmt.Errorf("parsed table starting at line %d is missing an ID", tableStartLineNumber)
+		}
+		if _, exists := allTables.Tables[parsedTable.ID]; exists {
+			return table.AllTables{}, fmt.Errorf("duplicate table ID '%s' found (originally from table at line %d)", parsedTable.ID, tableStartLineNumber)
+		}
+		allTables.Tables[parsedTable.ID] = parsedTable
+		if allTables.MainTableID == "" {
+			allTables.MainTableID = parsedTable.ID
+		}
+	}
+
+	return allTables, nil
+}
+
+// parseSingleTableDefinition takes a string input for a single table definition
+// and attempts to parse it into a Table object.
+// It also parses global table settings from the title line and
 // rowspan and background color from individual cells.
-func Parse(input string) (table.Table, error) {
+func parseSingleTableDefinition(tableInput string) (table.Table, error) {
 	// Initialize table with default settings. These can be overridden by parsed settings.
 	t := table.Table{
 		Settings: table.DefaultGlobalSettings(),
 		Rows:     []table.Row{}, // Ensure Rows is initialized
 	}
 
-	trimmedInput := strings.TrimSpace(input)
+	trimmedInput := strings.TrimSpace(tableInput)
 	if trimmedInput == "" {
-		return t, nil // Return empty table with defaults if input is empty
+		// This case should ideally be handled by the caller (ParseAllText)
+		// by not calling parseSingleTableDefinition with empty input.
+		// However, returning an empty table or an error are options.
+		// For now, let's assume valid non-empty input for a single table.
+		return t, fmt.Errorf("empty input provided to parseSingleTableDefinition")
 	}
 
 	lines := strings.Split(trimmedInput, "\n")
-	firstLineIdx := 0
+	// A single table definition must start with "table:"
+	if len(lines) == 0 || !strings.HasPrefix(lines[0], "table:") {
+		return table.Table{}, fmt.Errorf("table definition must start with 'table:'")
+	}
 
-	// Parse table title and global settings from the first line if present
-	if strings.HasPrefix(lines[0], "table:") {
-		titleAndSettingsLine := strings.TrimPrefix(lines[0], "table:")
-		firstLineIdx = 1
+	titleAndSettingsLine := strings.TrimPrefix(lines[0], "table:")
+	firstLineIdx := 1 // Start processing rows from the next line
+
+		// Regex to capture optional table ID: e.g., "[my-id] Title {settings}"
+		idRegex := regexp.MustCompile(`^\s*\[([\w\-]+)\](.*)`)
+		idMatches := idRegex.FindStringSubmatch(titleAndSettingsLine)
+
+		if len(idMatches) == 3 { // 0: full match, 1: ID, 2: rest of the line
+			t.ID = idMatches[1]
+			titleAndSettingsLine = strings.TrimSpace(idMatches[2])
+		}
 
 		// Regex to separate title from settings block (e.g., "My Title {setting:value}")
 		// Title part is (.*?), settings part is (.*) within {}.
@@ -193,6 +272,23 @@ func parseCell(cellInput string) (table.Cell, error) {
 		tempStr = strings.TrimSpace(matches[1] + " " + matches[3])
 	}
 
+	// 5. Extract Table Reference (e.g., "::table=ref-id::")
+	// This should ideally be the only significant content if present.
+	isTableRef := false
+	tableRefID := ""
+	// Regex: `(.*?)::table=([\w\-]+)::(.*)`
+	tableRefRegex := regexp.MustCompile(`(.*?)::table=([\w\-]+)::(.*)`)
+	if matches := tableRefRegex.FindStringSubmatch(tempStr); len(matches) == 4 {
+		// If a table reference is found, it takes precedence.
+		// Content before or after the directive will be trimmed.
+		isTableRef = true
+		tableRefID = strings.TrimSpace(matches[2])
+		// tempStr is reconstructed from parts not including the table directive.
+		// If other text was present (matches[1] or matches[3]), it's kept for now,
+		// but will be cleared if isTableRef is true.
+		tempStr = strings.TrimSpace(matches[1] + " " + matches[3])
+	}
+
 	// What's left in tempStr after removing all directives is the actual content.
 	content := strings.TrimSpace(tempStr)
 
@@ -201,6 +297,13 @@ func parseCell(cellInput string) (table.Cell, error) {
 	finalCell.Colspan = colspan
 	finalCell.Rowspan = rowspan
 	finalCell.BackgroundColor = bgColor
+	finalCell.IsTableRef = isTableRef
+	finalCell.TableRefID = tableRefID
+
+	// If the cell is a table reference, its direct content should be empty.
+	if finalCell.IsTableRef {
+		finalCell.Content = ""
+	}
 
 	return finalCell, nil
 }
