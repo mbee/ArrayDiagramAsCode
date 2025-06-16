@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"image/color"
 	"log"
+	"runtime" // Added for OS-dependent font path
 	"strings" // Needed for parseHexColor if it uses strings.TrimPrefix
 
 	"github.com/fogleman/gg"
@@ -88,8 +89,23 @@ func RenderToPNG(mainTable *table.Table, allTables map[string]table.Table, outpu
 
 	// Use default constants for layout calculation.
 	// These could be overridden by table.Settings in the future.
+
+	var osSpecificFontPath string
+	switch runtime.GOOS {
+	case "darwin":
+		osSpecificFontPath = "/System/Library/Fonts/Geneva.ttf" // A common macOS font
+	case "linux":
+		osSpecificFontPath = "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf"
+	default:
+		// Fallback for other OSes (e.g., Windows, BSD).
+		// Users on these OSes might need to ensure the font exists at this path
+		// or modify the code.
+		osSpecificFontPath = "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf" // Defaulting to Linux path
+		log.Printf("Warning: OS '%s' not explicitly supported for font path. Defaulting to: %s. Please ensure this font is available.", runtime.GOOS, osSpecificFontPath)
+	}
+
 	layoutConsts := LayoutConstants{
-		FontPath:             defaultFontPath,
+		FontPath:             osSpecificFontPath, // Use OS-specific font path
 		FontSize:             defaultFontSize,
 		LineHeightMultiplier: defaultLineHeightMultiplier,
 		Padding:              defaultPadding,

@@ -3,7 +3,7 @@ package parser
 import (
 	"diagramgen/pkg/table"
 	"reflect"
-	"fmt"     // For error messages in new tests
+	// "fmt" // Removed as unused
 	"strings" // Added import for strings.Contains
 	"testing"
 )
@@ -20,6 +20,7 @@ func TestParseSingleTableDefinition(t *testing.T) {
 			name:  "Empty Input",
 			input: "",
 			want:  table.Table{Title: "", Rows: []table.Row{}},
+		wantErr: true, // parseSingleTableDefinition now returns error for empty input
 		},
 		{
 			name:  "Only Table Title",
@@ -501,9 +502,9 @@ C|D`,
 		},
 		{
             name: "Table definition error propagated",
-            input: "table: [valid_id] Table 1\nInvalid Row ||| extra pipe",
+            input: "table: [valid_id] Table 1 {edge_thickness:abc}\nRowA | RowB", // Invalid edge_thickness
             wantErr:    true,
-            wantErrMsg: "failed to parse cell",
+            wantErrMsg: "invalid edge_thickness value", // Error from parseGlobalSettings
         },
 	}
 

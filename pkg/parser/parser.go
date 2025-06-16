@@ -129,7 +129,7 @@ func parseSingleTableDefinition(tableInput string) (table.Table, error) {
 		if len(lines) <= 1 { // Only title/settings line, no rows
 			return t, nil
 		}
-	}
+	// THE ERRONEOUS '}' WAS HERE (after the if block, before "Process actual table rows")
 
 	// Process actual table rows
 	for i := firstLineIdx; i < len(lines); i++ {

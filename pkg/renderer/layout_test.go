@@ -5,6 +5,8 @@ import (
 	"math"    // For float comparisons
 	"strings" // For TestCalculateColumnWidthsAndRowHeights font error check
 	"testing"
+
+	"github.com/fogleman/gg" // Added for NewContext
 )
 
 const epsilon_layout_test = 0.1
@@ -93,7 +95,7 @@ func TestCalculateColumnWidthsAndRowHeights(t *testing.T) {
 	tableSimple := &table.Table{ Rows: []table.Row{{Cells: []table.Cell{*c1, *c2}}} }
 	lgSimple, popErr := PopulateOccupationMap(tableSimple)
     if popErr != nil { t.Fatalf("Simple: PopulateOccupationMap failed: %v", popErr)}
-	calcErr := lgSimple.CalculateColumnWidthsAndRowHeights(constants)
+	calcErr := lgSimple.CalculateColumnWidthsAndRowHeights(constants, make(map[string]table.Table))
 	fontLoadFailed := (calcErr != nil && strings.Contains(calcErr.Error(), "failed to load font"))
 	if calcErr != nil && !fontLoadFailed { t.Fatalf("Simple: Calculate failed: %v", calcErr) }
     if fontLoadFailed { t.Logf("Simple: Font loading failed ('%s'), text measurement dependent assertions will be less reliable: %v", constants.FontPath, calcErr) }
@@ -109,7 +111,7 @@ func TestCalculateColumnWidthsAndRowHeights(t *testing.T) {
     tableColspan := &table.Table{ Rows: []table.Row{{Cells: []table.Cell{*spanCell}}} }
     lgColspan, popErrCs := PopulateOccupationMap(tableColspan)
     if popErrCs != nil { t.Fatalf("Colspan: Populate failed: %v", popErrCs) }
-    calcErrColspan := lgColspan.CalculateColumnWidthsAndRowHeights(constants)
+    calcErrColspan := lgColspan.CalculateColumnWidthsAndRowHeights(constants, make(map[string]table.Table))
 	fontLoadFailedColspan := (calcErrColspan != nil && strings.Contains(calcErrColspan.Error(), "failed to load font"))
     if calcErrColspan != nil && !fontLoadFailedColspan { t.Fatalf("Colspan: Calculate failed: %v", calcErrColspan) }
     if fontLoadFailedColspan { t.Logf("Colspan: Font loading failed...") }
