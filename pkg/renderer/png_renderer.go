@@ -298,34 +298,42 @@ func drawTableItself(dc *gg.Context, tableToDraw *table.Table, lg *LayoutGrid, a
 			dc.SetColor(textColor)
 
 			textStartX := gridCell.X + lConsts.Padding
-			currentTextY := gridCell.Y + lConsts.Padding
 			textAvailableWidth := gridCell.Width - (2 * lConsts.Padding)
 			if textAvailableWidth < 0 {
 				textAvailableWidth = 0
 			}
-			lineVisualHeight := lConsts.FontSize * lConsts.LineHeightMultiplier
 
+			contentAreaTopY := gridCell.Y + lConsts.Padding
+			contentAreaBottomY := gridCell.Y + gridCell.Height - lConsts.Padding
+			lineHeight := lConsts.FontSize * lConsts.LineHeightMultiplier
+			firstLineBaselineOffsetY := lConsts.FontSize // Key adjustment for first line
+
+			currentBaselineY := contentAreaTopY + firstLineBaselineOffsetY
+
+			titleProcessed := false
 			if cell.Title != "" {
 				titleText := "[" + cell.Title + "]"
 				titleLines := dc.WordWrap(titleText, textAvailableWidth)
 				for _, line := range titleLines {
-					if currentTextY+lineVisualHeight <= gridCell.Y+gridCell.Height-lConsts.Padding+epsilon {
-						dc.DrawString(line, textStartX, currentTextY)
-						currentTextY += lineVisualHeight
+					if currentBaselineY < contentAreaBottomY+epsilon { // Check if baseline is within content area
+						dc.DrawString(line, textStartX, currentBaselineY)
+						currentBaselineY += lineHeight
+						titleProcessed = true
 					} else {
-						break
+						break // Stop if baseline goes out of bounds
 					}
 				}
 			}
+
 			if cell.Content != "" {
-				if cell.Title != "" && (currentTextY > gridCell.Y+lConsts.Padding+epsilon) {
-					currentTextY += lineVisualHeight * 0.25
+				if titleProcessed && (currentBaselineY <= contentAreaBottomY+epsilon) { // Add gap only if title was drawn and there's space
+					currentBaselineY += lineHeight * 0.25
 				}
 				contentLines := dc.WordWrap(cell.Content, textAvailableWidth)
 				for _, line := range contentLines {
-					if currentTextY+lineVisualHeight <= gridCell.Y+gridCell.Height-lConsts.Padding+epsilon {
-						dc.DrawString(line, textStartX, currentTextY)
-						currentTextY += lineVisualHeight
+					if currentBaselineY < contentAreaBottomY+epsilon { // Check if baseline is within content area
+						dc.DrawString(line, textStartX, currentBaselineY)
+						currentBaselineY += lineHeight
 					} else {
 						break
 					}

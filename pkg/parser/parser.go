@@ -337,7 +337,11 @@ func parseCell(cellInput string) (table.Cell, error) {
 		tempStr = strings.TrimSpace(matches[1] + " " + matches[3])
 	}
 
-	// What's left in tempStr after removing all directives is the actual content.
+	// Process \n for multiline content *before* final trimming for content variable
+	// but *after* directives that might be part of tempStr are removed.
+	tempStr = strings.ReplaceAll(tempStr, "\\n", "\n")
+
+	// What's left in tempStr after removing all directives and processing newlines is the actual content.
 	content := strings.TrimSpace(tempStr)
 
 	// Create cell using NewCell (which sets defaults) and then override.

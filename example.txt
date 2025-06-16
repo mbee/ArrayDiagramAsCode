@@ -3,7 +3,7 @@ main_table: [main_overview]
 table: [main_overview] Main Overview {bg_table:#E0FFE0, edge_color:#333333, bg_cell:#F0FFF0}
 [ID] User ID | [Name] Full Name | [ContactInfo] Contact Information {bg:#DDEEDD}
 1 | Alice Wonderland | ::table=inner_contacts::
-2 | Bob The Builder | Email: bob@example.com
+2 | Bob The Builder | Email: bob@example.com\\nOffice: Main St. 123
 3 | Charlie Brown | Tel: 555-1234 {bg:#EEFFEE}
 4 | Also uses ::rowspan=2:: ::table=inner_contacts::
 

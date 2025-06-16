@@ -311,3 +311,124 @@ func TestCalculateCellContentSizeInternal_TableRef(t *testing.T) {
 		}
 	})
 }
+
+func TestCalculateCellContentSizeInternal_Multiline(t *testing.T) {
+	testLayoutConsts := LayoutConstants{
+		FontPath:             defaultFontPath_layout_test,
+		FontSize:             10.0, // Using 10.0 for easier calculation with lineHeightMultiplier
+		LineHeightMultiplier: 1.5,  // Results in lineHeight of 15.0
+		Padding:              5.0,
+		MinCellWidth:         20.0,
+		MinCellHeight:        20.0,
+	}
+	lineHeight := testLayoutConsts.FontSize * testLayoutConsts.LineHeightMultiplier // 15.0
+
+	dc := gg.NewContext(1, 1) // Dummy context for text measurement
+	if err := dc.LoadFontFace(testLayoutConsts.FontPath, testLayoutConsts.FontSize); err != nil {
+		t.Fatalf("Failed to load font %s: %v. This test requires a valid font.", testLayoutConsts.FontPath, err)
+	}
+
+	tests := []struct {
+		name                      string
+		cellContent               string
+		availableWidthForContent  float64 // This is availableWidthForTextAndPadding in func signature
+		expectedTextBlockWidth    float64 // Approximate, depends on font
+		expectedTextBlockHeight   float64
+		expectFontLoadErrorToWarn bool // If true, width assertions might be skipped if font fails
+	}{
+		{
+			name:                    "Single Line",
+			cellContent:             "Hello World",
+			availableWidthForContent: 200.0,
+			// Width of "Hello World" at 10pt. Manually get this via a quick gg run or estimate.
+			// For DejaVuSans at 10pt, "Hello World" is approx 60-70px. Let's say 65 for test.
+			expectedTextBlockWidth:  func() float64 { w, _ := dc.MeasureString("Hello World"); return w }(),
+			expectedTextBlockHeight: lineHeight, // 1 line * 15.0
+		},
+		{
+			name:                    "Two Lines Simple",
+			cellContent:             "First line\nSecond line",
+			availableWidthForContent: 200.0,
+			// Width of "Second line" is likely wider.
+			expectedTextBlockWidth:  func() float64 { w, _ := dc.MeasureString("Second line"); return w }(),
+			expectedTextBlockHeight: 2 * lineHeight, // 2 lines * 15.0
+		},
+		{
+			name:                    "Three Lines Blank Middle",
+			cellContent:             "Line 1\n\nLine 3", // gg.WordWrap likely treats \n\n as one separator -> ["Line 1", "Line 3"]
+			availableWidthForContent: 200.0,
+			expectedTextBlockWidth:  func() float64 { w, _ := dc.MeasureString("Line 1"); return w }(),
+			expectedTextBlockHeight: 2 * lineHeight, // Expect 2 lines if gg.WordWrap collapses \n\n
+		},
+		{
+			name:                    "Word Wrap with Newlines",
+			cellContent:             "Short line\nThis is a much longer line that will be wrapped",
+			availableWidthForContent: 100.0,
+			expectedTextBlockWidth:  0, // Placeholder, will be calculated by test logic below
+			expectedTextBlockHeight: 0, // Placeholder, will be calculated by test logic below
+		},
+		{
+			name:                    "Content requiring no wrap but has newline",
+			cellContent:             "Line one\nLine two also short",
+			availableWidthForContent: 500.0, // Ample width
+			expectedTextBlockWidth:  func() float64 { w, _ := dc.MeasureString("Line two also short"); return w }(),
+			expectedTextBlockHeight: 2 * lineHeight,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			// dc.LoadFontFace is already called once.
+			// For each test, create a new cell
+			cell := table.NewCell("", tt.cellContent) // Title is empty for these content tests
+
+			// Recalculate expected width for wrapped case more accurately inside test run
+			currentExpectedWidth := tt.expectedTextBlockWidth
+			currentExpectedHeight := tt.expectedTextBlockHeight
+
+			if tt.name == "Word Wrap with Newlines" {
+				// Manually calculate wrapping for this specific case to make test more robust
+				textAvailableWidth := tt.availableWidthForContent - (2 * testLayoutConsts.Padding)
+				lines := strings.Split(tt.cellContent, "\n")
+				totalLines := 0
+				maxWidth := 0.0
+				for _, part := range lines {
+					wrappedLines := dc.WordWrap(part, textAvailableWidth)
+					if len(wrappedLines) == 0 && part != "" { wrappedLines = []string{""} } // gg.WordWrap behavior
+					totalLines += len(wrappedLines)
+					for _, wl := range wrappedLines {
+						w, _ := dc.MeasureString(wl)
+						if w > maxWidth {
+							maxWidth = w
+						}
+					}
+				}
+				currentExpectedHeight = float64(totalLines) * lineHeight
+				// If any line was wrapped, the width taken would be the max of wrapped lines.
+				// If no line was wrapped, it's the max of actual line widths.
+				currentExpectedWidth = maxWidth // Use the actual max width of lines after potential wrapping
+			}
+			// For tests not named "Word Wrap with Newlines", use pre-set expected width.
+			if tt.name != "Word Wrap with Newlines" {
+			    currentExpectedWidth = tt.expectedTextBlockWidth
+			}
+
+
+			actualWidth, actualHeight, err := calculateCellContentSizeInternal(dc, &cell,
+				testLayoutConsts.FontSize, testLayoutConsts.LineHeightMultiplier,
+				testLayoutConsts.Padding, tt.availableWidthForContent,
+				nil, testLayoutConsts) // allTables is nil, not testing table refs here
+
+			if err != nil {
+				t.Errorf("calculateCellContentSizeInternal returned error: %v", err)
+			}
+
+			if !floatEquals(actualWidth, currentExpectedWidth, epsilon_layout_test*2) { // Wider epsilon for wrapped width
+				t.Errorf("For content '%s':\nExpected textBlockWidth %.2f, got %.2f", tt.cellContent, currentExpectedWidth, actualWidth)
+			}
+			if !floatEquals(actualHeight, currentExpectedHeight, epsilon_layout_test) {
+				t.Errorf("For content '%s':\nExpected textBlockHeight %.2f, got %.2f", tt.cellContent, currentExpectedHeight, actualHeight)
+			}
+		})
+	}
+}
