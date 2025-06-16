@@ -151,3 +151,161 @@ func TestCalculateFinalCellLayouts(t *testing.T) {
 	}
 	if !foundC1 { t.Error("C1 not found") }; if !foundC2span { t.Error("C2span not found") }
 }
+
+// floatEquals compares two float64 values with a given epsilon.
+func floatEquals(a, b, epsilon float64) bool {
+	return math.Abs(a-b) < epsilon
+}
+
+func TestCalculateCellContentSizeInternal_TableRef(t *testing.T) {
+	// Define LayoutConstants for tests - using values similar to png_renderer defaults
+	testLayoutConsts := LayoutConstants{
+		FontPath:             defaultFontPath_layout_test, // Defined in this test file
+		FontSize:             12.0,
+		LineHeightMultiplier: 1.4,
+		Padding:              8.0,
+		MinCellWidth:         30.0,
+		MinCellHeight:        30.0,
+	}
+
+	// Dummy gg.Context for text measurement (if needed by inner tables)
+	dc := gg.NewContext(1, 1)
+	if err := dc.LoadFontFace(testLayoutConsts.FontPath, testLayoutConsts.FontSize); err != nil {
+		t.Logf("Warning: could not load font at '%s': %v. Tests relying on precise text measurement might be affected.", testLayoutConsts.FontPath, err)
+	}
+
+	// --- Test Case 1: Valid Table Reference ---
+	t.Run("ValidTableReference", func(t *testing.T) {
+		innerTable := table.Table{
+			ID: "inner1",
+			Rows: []table.Row{
+				{Cells: []table.Cell{table.NewCell("R1C1", "Content"), table.NewCell("R1C2", "More Content")}},
+				{Cells: []table.Cell{table.NewCell("R2C1", "Even More"), table.NewCell("R2C2", "Final")}},
+			},
+			Settings: table.DefaultGlobalSettings(),
+		}
+		allTablesMap := map[string]table.Table{"inner1": innerTable}
+		parentCell := table.Cell{
+			IsTableRef: true,
+			TableRefID: "inner1",
+		}
+
+		// Calculate expected dimensions for the inner table
+		expectedInnerLg, mapErr := PopulateOccupationMap(&innerTable)
+		if mapErr != nil {
+			t.Fatalf("Error populating map for expected inner table: %v", mapErr)
+		}
+		// Note: Pass allTablesMap here in case innerTable itself had nested tables.
+		calcErr := expectedInnerLg.CalculateColumnWidthsAndRowHeights(testLayoutConsts, allTablesMap)
+		if calcErr != nil && !strings.Contains(calcErr.Error(), "failed to load font") { // Ignore font load error for this part
+			t.Fatalf("Error calculating column/row sizes for expected inner table: %v", calcErr)
+		}
+		expectedInnerLg.CalculateFinalCellLayouts(0) // 0 margin for inner table's own canvas
+		expectedWidth := expectedInnerLg.CanvasWidth
+		expectedHeight := expectedInnerLg.CanvasHeight
+
+		actualWidth, actualHeight, err := calculateCellContentSizeInternal(dc, &parentCell,
+			testLayoutConsts.FontSize, testLayoutConsts.LineHeightMultiplier, testLayoutConsts.Padding,
+			2000.0, // large availableWidth
+			allTablesMap, testLayoutConsts)
+
+		if err != nil {
+			t.Errorf("calculateCellContentSizeInternal returned an unexpected error: %v", err)
+		}
+		if !floatEquals(actualWidth, expectedWidth, epsilon_layout_test) {
+			t.Errorf("Expected width %.2f, got %.2f", expectedWidth, actualWidth)
+		}
+		if !floatEquals(actualHeight, expectedHeight, epsilon_layout_test) {
+			t.Errorf("Expected height %.2f, got %.2f", expectedHeight, actualHeight)
+		}
+	})
+
+	// --- Test Case 2: Empty Inner Table ---
+	t.Run("EmptyInnerTable", func(t *testing.T) {
+		emptyInnerTable := table.Table{ID: "emptyInner", Settings: table.DefaultGlobalSettings()} // No rows/cols
+		allTablesMap := map[string]table.Table{"emptyInner": emptyInnerTable}
+		parentCell := table.Cell{IsTableRef: true, TableRefID: "emptyInner"}
+
+		actualWidth, actualHeight, err := calculateCellContentSizeInternal(dc, &parentCell,
+			testLayoutConsts.FontSize, testLayoutConsts.LineHeightMultiplier, testLayoutConsts.Padding,
+			2000.0, allTablesMap, testLayoutConsts)
+
+		if err != nil {
+			t.Errorf("Expected no error for empty inner table, got: %v", err)
+		}
+		if !floatEquals(actualWidth, 0.0, epsilon_layout_test) {
+			t.Errorf("Expected width 0.0 for empty inner table, got %.2f", actualWidth)
+		}
+		if !floatEquals(actualHeight, 0.0, epsilon_layout_test) {
+			t.Errorf("Expected height 0.0 for empty inner table, got %.2f", actualHeight)
+		}
+	})
+
+	// --- Test Case 3: Non-Existent TableRefID ---
+	t.Run("NonExistentTableRefID", func(t *testing.T) {
+		allTablesMap := map[string]table.Table{} // Empty map
+		parentCell := table.Cell{IsTableRef: true, TableRefID: "non_existent_id"}
+
+		expectedFallbackWidth := math.Max(0, testLayoutConsts.MinCellWidth-(2*testLayoutConsts.Padding))
+		expectedFallbackHeight := math.Max(0, testLayoutConsts.MinCellHeight-(2*testLayoutConsts.Padding))
+
+		actualWidth, actualHeight, err := calculateCellContentSizeInternal(dc, &parentCell,
+			testLayoutConsts.FontSize, testLayoutConsts.LineHeightMultiplier, testLayoutConsts.Padding,
+			2000.0, allTablesMap, testLayoutConsts)
+
+		if err != nil {
+			t.Errorf("Expected no error for non-existent TableRefID (should use fallback), got: %v", err)
+		}
+		if !floatEquals(actualWidth, expectedFallbackWidth, epsilon_layout_test) {
+			t.Errorf("Expected fallback width %.2f for non-existent ID, got %.2f", expectedFallbackWidth, actualWidth)
+		}
+		if !floatEquals(actualHeight, expectedFallbackHeight, epsilon_layout_test) {
+			t.Errorf("Expected fallback height %.2f for non-existent ID, got %.2f", expectedFallbackHeight, actualHeight)
+		}
+	})
+
+	// --- Test Case 4: Nil allTablesMap ---
+	t.Run("NilAllTablesMap", func(t *testing.T) {
+		parentCell := table.Cell{IsTableRef: true, TableRefID: "anyID"}
+
+		expectedFallbackWidth := math.Max(0, testLayoutConsts.MinCellWidth-(2*testLayoutConsts.Padding))
+		expectedFallbackHeight := math.Max(0, testLayoutConsts.MinCellHeight-(2*testLayoutConsts.Padding))
+
+		actualWidth, actualHeight, err := calculateCellContentSizeInternal(dc, &parentCell,
+			testLayoutConsts.FontSize, testLayoutConsts.LineHeightMultiplier, testLayoutConsts.Padding,
+			2000.0, nil, testLayoutConsts) // Pass nil for allTablesMap
+
+		if err != nil {
+			t.Errorf("Expected no error for nil allTablesMap (should use fallback), got: %v", err)
+		}
+		if !floatEquals(actualWidth, expectedFallbackWidth, epsilon_layout_test) {
+			t.Errorf("Expected fallback width %.2f for nil allTablesMap, got %.2f", expectedFallbackWidth, actualWidth)
+		}
+		if !floatEquals(actualHeight, expectedFallbackHeight, epsilon_layout_test) {
+			t.Errorf("Expected fallback height %.2f for nil allTablesMap, got %.2f", expectedFallbackHeight, actualHeight)
+		}
+	})
+
+	// --- Test Case 5: Empty TableRefID ---
+	t.Run("EmptyTableRefID", func(t *testing.T) {
+		allTablesMap := map[string]table.Table{}
+		parentCell := table.Cell{IsTableRef: true, TableRefID: ""} // Empty TableRefID
+
+		expectedFallbackWidth := math.Max(0, testLayoutConsts.MinCellWidth-(2*testLayoutConsts.Padding))
+		expectedFallbackHeight := math.Max(0, testLayoutConsts.MinCellHeight-(2*testLayoutConsts.Padding))
+
+		actualWidth, actualHeight, err := calculateCellContentSizeInternal(dc, &parentCell,
+			testLayoutConsts.FontSize, testLayoutConsts.LineHeightMultiplier, testLayoutConsts.Padding,
+			2000.0, allTablesMap, testLayoutConsts)
+
+		if err != nil {
+			t.Errorf("Expected no error for empty TableRefID (should use fallback), got: %v", err)
+		}
+		if !floatEquals(actualWidth, expectedFallbackWidth, epsilon_layout_test) {
+			t.Errorf("Expected fallback width %.2f for empty TableRefID, got %.2f", expectedFallbackWidth, actualWidth)
+		}
+		if !floatEquals(actualHeight, expectedFallbackHeight, epsilon_layout_test) {
+			t.Errorf("Expected fallback height %.2f for empty TableRefID, got %.2f", expectedFallbackHeight, actualHeight)
+		}
+	})
+}

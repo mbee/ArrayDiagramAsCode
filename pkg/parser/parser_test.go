@@ -3,14 +3,16 @@ package parser
 import (
 	"diagramgen/pkg/table"
 	"reflect"
+	"fmt"     // For error messages in new tests
 	"strings" // Added import for strings.Contains
 	"testing"
 )
 
-func TestParse(t *testing.T) {
+// TestParseSingleTableDefinition tests the parsing of a single table definition block.
+func TestParseSingleTableDefinition(t *testing.T) {
 	tests := []struct {
 		name    string
-		input   string
+		input   string // Represents a single table definition string
 		want    table.Table
 		wantErr bool // if you expect an error
 	}{
@@ -22,27 +24,83 @@ func TestParse(t *testing.T) {
 		{
 			name:  "Only Table Title",
 			input: "table: My Test Table",
-			want:  table.Table{Title: "My Test Table", Rows: []table.Row{}},
+			want:  table.Table{ID: "", Title: "My Test Table", Rows: []table.Row{}}, // ID is empty if not specified
+		},
+		// --- New Test Cases for Table ID Parsing ---
+		{
+			name:  "ID Only",
+			input: "table: [id_only]",
+			want:  table.Table{ID: "id_only", Title: "", Rows: []table.Row{}},
 		},
 		{
-			name: "Global Settings in Title Line",
+			name:  "ID with Title",
+			input: "table: [id_with_title] My Actual Title",
+			want:  table.Table{ID: "id_with_title", Title: "My Actual Title", Rows: []table.Row{}},
+		},
+		{
+			name:  "ID with Settings",
+			input: "table: [id_with_settings] {bg_table:#112233}",
+			want: table.Table{
+				ID:    "id_with_settings",
+				Title: "", // Title is empty
+				Rows:  []table.Row{},
+				Settings: table.GlobalSettings{
+					TableBackgroundColor:       "#112233",
+					DefaultCellBackgroundColor: table.DefaultGlobalSettings().DefaultCellBackgroundColor,
+					EdgeColor:                  table.DefaultGlobalSettings().EdgeColor,
+					EdgeThickness:              table.DefaultGlobalSettings().EdgeThickness,
+				},
+			},
+		},
+		{
+			name:  "ID with Title and Settings",
+			input: "table: [id_title_settings] My Title Here {bg_table:#334455, edge_color:#667788}",
+			want: table.Table{
+				ID:    "id_title_settings",
+				Title: "My Title Here",
+				Rows:  []table.Row{},
+				Settings: table.GlobalSettings{
+					TableBackgroundColor:       "#334455",
+					EdgeColor:                  "#667788",
+					DefaultCellBackgroundColor: table.DefaultGlobalSettings().DefaultCellBackgroundColor,
+					EdgeThickness:              table.DefaultGlobalSettings().EdgeThickness,
+				},
+			},
+		},
+		{
+			name:  "ID with Hyphen and Numbers",
+			input: "table: [id-with-hyphen_and_nums123] Title",
+			want:  table.Table{ID: "id-with-hyphen_and_nums123", Title: "Title", Rows: []table.Row{}},
+		},
+		{
+			name:  "Title Only (No ID Brackets)",
+			input: "table: Title Only Without ID",
+			want:  table.Table{ID: "", Title: "Title Only Without ID", Rows: []table.Row{}},
+		},
+		// --- End of New Table ID Test Cases ---
+		{
+			name: "Global Settings in Title Line (Original)",
 			input: "table: My Table {bg_table:#CCC, edge_thickness:2}",
 			want: table.Table{
+				ID:    "", // No ID specified
 				Title: "My Table",
 				Rows:  []table.Row{},
 				Settings: table.GlobalSettings{
 					TableBackgroundColor:       "#CCC",
 					EdgeThickness:              2,
-					DefaultCellBackgroundColor: table.DefaultGlobalSettings().DefaultCellBackgroundColor, // Should remain default
-					EdgeColor:                  table.DefaultGlobalSettings().EdgeColor,                  // Should remain default
+					DefaultCellBackgroundColor: table.DefaultGlobalSettings().DefaultCellBackgroundColor,
+					EdgeColor:                  table.DefaultGlobalSettings().EdgeColor,
 				},
 			},
 		},
+		// Adjusted tests: parseSingleTableDefinition requires "table:" prefix.
+		// Original tests for row/cell parsing are adapted by adding a dummy table prefix.
 		{
-			name: "Simple Row No Title",
-			input: "Cell A | Cell B",
+			name: "Simple Row No Title (Adapted for parseSingleTableDefinition)",
+			input: "table: [test]\nCell A | Cell B",
 			want: table.Table{
-				Title: "",
+				ID:    "test",
+				Title: "", // No title on table line
 				Rows: []table.Row{
 					{Cells: []table.Cell{
 						table.NewCell("", "Cell A"),
@@ -52,10 +110,11 @@ func TestParse(t *testing.T) {
 			},
 		},
 		{
-			name: "Row with Cell Titles",
-			input: "[TitleA] ContentA | [TitleB] ContentB",
+			name: "Row with Cell Titles (Adapted)",
+			input: "table: [test]\n[TitleA] ContentA | [TitleB] ContentB",
 			want: table.Table{
-				Title: "",
+				ID:    "test",
+				Title: "", // No title on table line
 				Rows: []table.Row{
 					{Cells: []table.Cell{
 						table.NewCell("TitleA", "ContentA"),
@@ -65,9 +124,10 @@ func TestParse(t *testing.T) {
 			},
 		},
 		{
-			name: "Directive at start of cell content",
-			input: "::colspan=2:: Cell A",
+			name: "Directive at start of cell content (Adapted)",
+			input: "table: [test]\n::colspan=2:: Cell A",
 			want: table.Table{
+				ID:    "test",
 				Title: "",
 				Rows: []table.Row{
 					{Cells: []table.Cell{
@@ -77,9 +137,10 @@ func TestParse(t *testing.T) {
 			},
 		},
 		{
-			name: "Title and directive at start of cell content",
-			input: "[Title] ::colspan=2:: Cell A",
+			name: "Title and directive at start of cell content (Adapted)",
+			input: "table: [test]\n[Title] ::colspan=2:: Cell A",
 			want: table.Table{
+				ID:    "test",
 				Title: "",
 				Rows: []table.Row{
 					{Cells: []table.Cell{
@@ -89,9 +150,10 @@ func TestParse(t *testing.T) {
 			},
 		},
 		{
-			name: "Directive with no content after",
-			input: "::colspan=3::",
+			name: "Directive with no content after (Adapted)",
+			input: "table: [test]\n::colspan=3::",
 			want: table.Table{
+				ID:    "test",
 				Title: "",
 				Rows: []table.Row{
 					{Cells: []table.Cell{
@@ -101,9 +163,10 @@ func TestParse(t *testing.T) {
 			},
 		},
 		{
-			name: "Title and directive with no content after",
-			input: "[Title] ::colspan=2::",
+			name: "Title and directive with no content after (Adapted)",
+			input: "table: [test]\n[Title] ::colspan=2::",
 			want: table.Table{
+				ID:    "test",
 				Title: "",
 				Rows: []table.Row{
 					{Cells: []table.Cell{
@@ -112,25 +175,24 @@ func TestParse(t *testing.T) {
 				},
 			},
 		},
-		// ADJUSTED TEST for new flexible parsing:
 		{
-			name:  "Colspan directive now parsed even if not at start",
-			input: "Content before ::colspan=2:: then after",
+			name:  "Colspan directive not at start (Adapted)",
+			input: "table: [test]\nContent before ::colspan=2:: then after",
 			want: table.Table{
+				ID:    "test",
 				Title: "",
 				Rows: []table.Row{
 					{Cells: []table.Cell{
-						// Expecting triple space based on refined understanding of parser logic
 						func() table.Cell { c := table.NewCell("", "Content before   then after"); c.Colspan = 2; return c }(),
 					}},
 				},
 			},
 		},
-		// NEW TESTS from prompt:
 		{
-			name:  "Content Before and After Colspan",
-			input: "Leading ::colspan=2:: Trailing",
+			name:  "Content Before and After Colspan (Adapted)",
+			input: "table: [test]\nLeading ::colspan=2:: Trailing",
 			want: table.Table{
+				ID:    "test",
 				Title: "",
 				Rows: []table.Row{{Cells: []table.Cell{
 					func() table.Cell { c := table.NewCell("", "Leading   Trailing"); c.Colspan = 2; return c }(),
@@ -138,9 +200,10 @@ func TestParse(t *testing.T) {
 			},
 		},
 		{
-			name:  "Content Before and After Background Color",
-			input: "Leading {bg:#FF0000} Trailing",
+			name:  "Content Before and After Background Color (Adapted)",
+			input: "table: [test]\nLeading {bg:#FF0000} Trailing",
 			want: table.Table{
+				ID:    "test",
 				Title: "",
 				Rows: []table.Row{{Cells: []table.Cell{
 					func() table.Cell { c := table.NewCell("", "Leading   Trailing"); c.BackgroundColor = "#FF0000"; return c }(),
@@ -148,9 +211,10 @@ func TestParse(t *testing.T) {
 			},
 		},
 		{
-			name:  "Content Before and After Rowspan",
-			input: "Content ::rowspan=3:: More Content",
+			name:  "Content Before and After Rowspan (Adapted)",
+			input: "table: [test]\nContent ::rowspan=3:: More Content",
 			want: table.Table{
+				ID:    "test",
 				Title: "",
 				Rows: []table.Row{{Cells: []table.Cell{
 					func() table.Cell { c := table.NewCell("", "Content   More Content"); c.Rowspan = 3; return c }(),
@@ -158,23 +222,13 @@ func TestParse(t *testing.T) {
 			},
 		},
 		{
-			name:  "Mixed Content and Multiple Directives",
-			input: "[MegaCell] Start ::rowspan=2:: Middle {bg:blue} End ::colspan=3:: Final",
-			// parseCell order: Title -> Rowspan -> Colspan -> BGColor
-			// 1. Title: "MegaCell", remaining: "Start ::rowspan=2:: Middle {bg:blue} End ::colspan=3:: Final"
-			// 2. Rowspan: 2, remaining: "Start Middle {bg:blue} End ::colspan=3:: Final"
-			// 3. Colspan: 3, remaining: "Start Middle {bg:blue} End Final"
-			// 4. BGColor: "blue", remaining: "Start Middle End Final"
-			// Content: "Start Middle End Final"
+			name:  "Mixed Content and Multiple Directives (Adapted)",
+			input: "table: [test]\n[MegaCell] Start ::rowspan=2:: Middle {bg:blue} End ::colspan=3:: Final",
 			want: table.Table{
+				ID:    "test",
 				Title: "",
 				Rows: []table.Row{{Cells: []table.Cell{
 					func() table.Cell {
-						// "Start ::r:: Middle {bg} End ::c:: Final"
-						// After rowspan: "Start   Middle {bg} End ::c:: Final" (if spaces around ::r::)
-						// After colspan: "Start   Middle {bg} End   Final" (if spaces around ::c::)
-						// After bg:      "Start   Middle   End   Final" (if spaces around {bg})
-						// This matches the observed "got" pattern of three spaces.
 						c := table.NewCell("MegaCell", "Start   Middle   End   Final")
 						c.Rowspan = 2
 						c.Colspan = 3
@@ -185,16 +239,10 @@ func TestParse(t *testing.T) {
 			},
 		},
 		{
-			name:  "Invalid Colspan Directive with Valid BG",
-			input: "Content ::colspan=XYZ:: {bg:green}",
-			// Colspan XYZ is not parsed by \d+, so "::colspan=XYZ::" remains part of content.
-			// BG Green should still be parsed from the end of "Content ::colspan=XYZ::".
-			// 1. Title: ""
-			// 2. Rowspan: No match on "Content ::colspan=XYZ:: {bg:green}"
-			// 3. Colspan: No match on "Content ::colspan=XYZ:: {bg:green}" (XYZ is not \d+)
-			// 4. BGColor: "green", remaining: "Content ::colspan=XYZ::"
-			// Content: "Content ::colspan=XYZ::"
+			name:  "Invalid Colspan Directive with Valid BG (Adapted)",
+			input: "table: [test]\nContent ::colspan=XYZ:: {bg:green}",
 			want: table.Table{
+				ID:    "test",
 				Title: "",
 				Rows: []table.Row{{Cells: []table.Cell{
 					func() table.Cell {
@@ -206,9 +254,10 @@ func TestParse(t *testing.T) {
 			},
 		},
 		{
-			name:  "Directive at start, no leading content",
-			input: "::rowspan=3:: Lead with directive",
+			name:  "Directive at start, no leading content (Adapted)",
+			input: "table: [test]\n::rowspan=3:: Lead with directive",
 			want: table.Table{
+				ID:    "test",
 				Title: "",
 				Rows: []table.Row{{Cells: []table.Cell{
 					func() table.Cell { c := table.NewCell("", "Lead with directive"); c.Rowspan = 3; return c }(),
@@ -216,9 +265,10 @@ func TestParse(t *testing.T) {
 			},
 		},
 		{
-			name:  "Directive at end, no trailing content",
-			input: "End with directive {bg:red}",
+			name:  "Directive at end, no trailing content (Adapted)",
+			input: "table: [test]\nEnd with directive {bg:red}",
 			want: table.Table{
+				ID:    "test",
 				Title: "",
 				Rows: []table.Row{{Cells: []table.Cell{
 					func() table.Cell { c := table.NewCell("", "End with directive"); c.BackgroundColor = "red"; return c }(),
@@ -226,14 +276,10 @@ func TestParse(t *testing.T) {
 			},
 		},
 		{
-			name:  "Multiple directives, no intermediate content",
-			input: "[Title] ::rowspan=2::::colspan=3::{bg:yellow}",
-			// 1. Title: "Title", remaining: "::rowspan=2::::colspan=3::{bg:yellow}"
-			// 2. Rowspan: 2, remaining: "::colspan=3::{bg:yellow}" (note: space added by reconstruction logic then trimmed)
-			// 3. Colspan: 3, remaining: "{bg:yellow}"
-			// 4. BGColor: "yellow", remaining: ""
-			// Content: ""
+			name:  "Multiple directives, no intermediate content (Adapted)",
+			input: "table: [test]\n[Title] ::rowspan=2::::colspan=3::{bg:yellow}",
 			want: table.Table{
+				ID:    "test",
 				Title: "",
 				Rows: []table.Row{{Cells: []table.Cell{
 					func() table.Cell {
@@ -246,14 +292,11 @@ func TestParse(t *testing.T) {
 				}}},
 			},
 		},
-		// Existing tests that might be affected by more aggressive parsing
 		{
-			name:  "Invalid Colspan (text) is now parsed around by BG", // Old: "Invalid Colspan (text) treated as content"
-			input: "Cell A ::colspan=abc:: {bg:lime}", // Added a BG to test interaction
-			// Old: table.NewCell("", "Cell A ::colspan=abc::")
-			// New: Colspan "abc" is not \d+. Rowspan no match. Colspan no match.
-			// BGColor "lime" is parsed. Content becomes "Cell A ::colspan=abc::".
+			name:  "Invalid Colspan (text) with BG (Adapted)",
+			input: "table: [test]\nCell A ::colspan=abc:: {bg:lime}",
 			want: table.Table{
+				ID:    "test",
 				Title: "",
 				Rows: []table.Row{
 					{Cells: []table.Cell{
@@ -263,12 +306,10 @@ func TestParse(t *testing.T) {
 			},
 		},
 		{
-			name:  "Invalid Colspan (negative) is now parsed around by BG", // Old: "Invalid Colspan (negative) treated as content"
-			input: "Cell A ::colspan=-1:: {bg:pink}", // Added a BG
-			// Old: table.NewCell("", "Cell A ::colspan=-1::")
-			// New: Colspan "-1" is not \d+ (Atoi fails). Rowspan no match. Colspan no match.
-			// BGColor "pink" is parsed. Content becomes "Cell A ::colspan=-1::".
+			name:  "Invalid Colspan (negative) with BG (Adapted)",
+			input: "table: [test]\nCell A ::colspan=-1:: {bg:pink}",
 			want: table.Table{
+				ID:    "test",
 				Title: "",
 				Rows: []table.Row{
 					{Cells: []table.Cell{
@@ -277,12 +318,11 @@ func TestParse(t *testing.T) {
 				},
 			},
 		},
-		// Keep other existing tests like pipe handling, empty lines, etc.
-		// They should not be affected as they don't involve complex directive parsing.
 		{
-			name:  "Leading and Trailing Pipes with content",
-			input: "| Cell A | Cell B |",
+			name:  "Leading and Trailing Pipes with content (Adapted)",
+			input: "table: [test]\n| Cell A | Cell B |",
 			want: table.Table{
+				ID:    "test",
 				Title: "",
 				Rows: []table.Row{
 					{Cells: []table.Cell{
@@ -293,9 +333,10 @@ func TestParse(t *testing.T) {
 			},
 		},
 		{
-			name:  "Multiple Pipes creating empty cell",
-			input: "Cell A || Cell B",
+			name:  "Multiple Pipes creating empty cell (Adapted)",
+			input: "table: [test]\nCell A || Cell B",
 			want: table.Table{
+				ID:    "test",
 				Title: "",
 				Rows: []table.Row{
 					{Cells: []table.Cell{
@@ -306,49 +347,303 @@ func TestParse(t *testing.T) {
 				},
 			},
 		},
+		{
+			name:    "parseSingleTableDefinition - Input without 'table:' prefix",
+			input:   "Just some rows\nCell1 | Cell2",
+			wantErr: true, // Expects error as "table:" prefix is mandatory
+		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			// Ensure default settings for 'want' table if not specified in test
-			if reflect.DeepEqual(tt.want.Settings, table.GlobalSettings{}) && tt.want.Title != "" || len(tt.want.Rows) > 0 {
-                 // If settings is zero and it's not an empty table want, fill defaults
-                // For tables where settings ARE specified (like "Global Settings in Title Line"), this won't run.
-                // For other specific test cases, if want.Settings is intended to be non-default, it must be set.
-                // Most tests define table.Table{Rows: ...} which means Settings is zero.
-                // The parser ALWAYS initializes t.Settings with DefaultGlobalSettings().
-                // So, all 'want' tables MUST have settings initialized for DeepEqual to pass.
-                tt.want.Settings = table.DefaultGlobalSettings()
+			// Standardize want.Settings for comparison
+			// If a test case for parseSingleTableDefinition doesn't explicitly set settings,
+			// they will be DefaultGlobalSettings because parseSingleTableDefinition initializes them.
+			// So, we must ensure tt.want.Settings reflects this.
+			if reflect.DeepEqual(tt.want.Settings, table.GlobalSettings{}) {
+				// This check if tt.want.Settings is zero assumes that if any setting
+				// was intended to be non-default, it would have been set in the test case.
+				// And if all were intended to be default, this makes it explicit.
+				 isWantSettingsActuallyEmpty := true
+				 settingsVal := reflect.ValueOf(tt.want.Settings)
+				 for i := 0; i < settingsVal.NumField(); i++ {
+					 if !settingsVal.Field(i).IsZero() {
+						 isWantSettingsActuallyEmpty = false
+						 break
+					 }
+				 }
+				 if isWantSettingsActuallyEmpty {
+					tt.want.Settings = table.DefaultGlobalSettings()
+				 }
 			}
-			if tt.input == "" || (tt.input == "table: My Test Table" || tt.input == "table: My Test Table\n" || tt.input == "|") {
-                // Special cases where parser might return a table with non-default settings but specific other fields
-                if tt.input == "" && reflect.DeepEqual(tt.want.Settings, table.GlobalSettings{}) {
-                    tt.want.Settings = table.DefaultGlobalSettings()
-                }
-                 if (tt.input == "table: My Test Table" || tt.input == "table: My Test Table\n") && tt.want.Settings.TableBackgroundColor == "" {
-                     // If test didn't specify settings, ensure want has default.
-                    tt.want.Settings = table.DefaultGlobalSettings()
-                }
-            }
+			// Ensure Rows is not nil for comparison if want.Rows is empty
+			if tt.want.Rows == nil && len(tt.want.Rows) == 0 { // Corrected: check len if nil
+				tt.want.Rows = []table.Row{}
+			}
 
 
-			got, err := Parse(tt.input)
+			got, err := parseSingleTableDefinition(tt.input)
 			if (err != nil) != tt.wantErr {
-				t.Errorf("Parse() error = %v, wantErr %v", err, tt.wantErr)
+				t.Errorf("parseSingleTableDefinition() error = %v, wantErr %v", err, tt.wantErr)
+				return
+			}
+			if tt.wantErr { // If an error was expected, no need to compare structs
 				return
 			}
 
-			if got.Rows == nil && len(tt.want.Rows) == 0 {
-				got.Rows = []table.Row{}
+			if !reflect.DeepEqual(got, tt.want) {
+				t.Errorf("parseSingleTableDefinition() got = \n%+v\nwant = \n%+v", got, tt.want)
 			}
-            // Crucial: Ensure all 'want' tables have settings for comparison, as Parse() always sets them.
-            if !strings.Contains(tt.name, "Global Settings") && reflect.DeepEqual(tt.want.Settings, table.GlobalSettings{}) {
-                 tt.want.Settings = table.DefaultGlobalSettings()
-            }
+		})
+	}
+}
 
+func TestParseAllText(t *testing.T) {
+	defaultSettings := table.DefaultGlobalSettings()
+
+	tests := []struct {
+		name        string
+		input       string
+		wantTables  map[string]table.Table
+		wantMainID  string
+		wantErrMsg  string // Substring of the expected error message
+		wantErr     bool
+	}{
+		{
+			name:       "Empty Input",
+			input:      "",
+			wantTables: map[string]table.Table{},
+			wantMainID: "",
+			wantErr:    false,
+		},
+		{
+			name:       "Input without table prefix",
+			input:      "Just some text\nNot a table definition",
+			wantTables: map[string]table.Table{},
+			wantMainID: "",
+			wantErr:    false,
+		},
+		{
+			name: "Single Table Parsed Correctly",
+			input: "table: [first_table] First Table Title\nColA | ColB\nVal1 | Val2",
+			wantTables: map[string]table.Table{
+				"first_table": {
+					ID:    "first_table",
+					Title: "First Table Title",
+					Rows: []table.Row{
+						{Cells: []table.Cell{table.NewCell("", "ColA"), table.NewCell("", "ColB")}},
+						{Cells: []table.Cell{table.NewCell("", "Val1"), table.NewCell("", "Val2")}},
+					},
+					Settings: defaultSettings, // Explicitly set default settings
+				},
+			},
+			wantMainID: "first_table",
+			wantErr:    false,
+		},
+		{
+			name: "Multiple Tables Parsed Correctly",
+			input: `
+table: [first_table] First Table Title
+ColA | ColB
+Val1 | Val2
+
+table: [second_table] Second Table Title {bg_cell:#EEEEEE}
+Header1 | Header2
+Data1 | Data2
+Data3 | Data4`,
+			wantTables: map[string]table.Table{
+				"first_table": {
+					ID:    "first_table",
+					Title: "First Table Title",
+					Rows: []table.Row{
+						{Cells: []table.Cell{table.NewCell("", "ColA"), table.NewCell("", "ColB")}},
+						{Cells: []table.Cell{table.NewCell("", "Val1"), table.NewCell("", "Val2")}},
+					},
+					Settings: defaultSettings, // Explicitly set
+				},
+				"second_table": {
+					ID:    "second_table",
+					Title: "Second Table Title",
+					Rows: []table.Row{
+						{Cells: []table.Cell{table.NewCell("", "Header1"), table.NewCell("", "Header2")}},
+						{Cells: []table.Cell{table.NewCell("", "Data1"), table.NewCell("", "Data2")}},
+						{Cells: []table.Cell{table.NewCell("", "Data3"), table.NewCell("", "Data4")}},
+					},
+					Settings: func() table.GlobalSettings {
+						s := defaultSettings // Start with defaults
+						s.DefaultCellBackgroundColor = "#EEEEEE" // Modify specific field
+						return s
+					}(),
+				},
+			},
+			wantMainID: "first_table",
+			wantErr:    false,
+		},
+		{
+			name: "Duplicate Table IDs",
+			input: `
+table: [dup_id] Table 1
+A|B
+table: [dup_id] Table 2
+C|D`,
+			wantErr:    true,
+			wantErrMsg: "duplicate table ID 'dup_id' found",
+		},
+		{
+			name: "Table Missing ID",
+			input: `
+table: [valid_id] Table 1
+A|B
+table: Table Without ID
+C|D`,
+			wantErr:    true,
+			wantErrMsg: "is missing an ID",
+		},
+		{
+            name: "Table definition error propagated",
+            input: "table: [valid_id] Table 1\nInvalid Row ||| extra pipe",
+            wantErr:    true,
+            wantErrMsg: "failed to parse cell",
+        },
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got, err := ParseAllText(tt.input)
+
+			if (err != nil) != tt.wantErr {
+				t.Errorf("ParseAllText() error = %v, wantErr %v", err, tt.wantErr)
+				return
+			}
+			if tt.wantErr {
+				if tt.wantErrMsg != "" && (err == nil || !strings.Contains(err.Error(), tt.wantErrMsg)) {
+					t.Errorf("ParseAllText() expected error containing '%s', got: %v", tt.wantErrMsg, err)
+				}
+				return
+			}
+
+			if got.MainTableID != tt.wantMainID {
+				t.Errorf("ParseAllText() got.MainTableID = %v, want %v", got.MainTableID, tt.wantMainID)
+			}
+			if len(got.Tables) != len(tt.wantTables) {
+				t.Errorf("ParseAllText() len(got.Tables) = %d, want %d", len(got.Tables), len(tt.wantTables))
+				// To prevent panic on nil maps if lengths differ significantly
+				if len(got.Tables) == 0 || len(tt.wantTables) == 0 {
+					return
+				}
+			}
+
+			for id, wantTable := range tt.wantTables {
+				gotTable, ok := got.Tables[id]
+				if !ok {
+					t.Errorf("ParseAllText() expected table with ID '%s' not found in results", id)
+					continue
+				}
+
+				// Ensure wantTable has its settings correctly for comparison
+				// If wantTable.Settings is zero, it implies defaults were expected *for that table*.
+				// parseSingleTableDefinition ensures settings are always initialized.
+				if reflect.ValueOf(wantTable.Settings).IsZero() {
+					wantTable.Settings = defaultSettings
+				}
+				if wantTable.Rows == nil { wantTable.Rows = []table.Row{} }
+
+
+				if !reflect.DeepEqual(gotTable, wantTable) {
+					// Provide more detailed diff for table structs
+					t.Errorf("ParseAllText() table ID '%s' mismatch (-got +want):\nGot:\n%+v\nWant:\n%+v", id, gotTable, wantTable)
+
+					if gotTable.ID != wantTable.ID { t.Errorf("  ID: got %s, want %s", gotTable.ID, wantTable.ID) }
+					if gotTable.Title != wantTable.Title { t.Errorf("  Title: got %s, want %s", gotTable.Title, wantTable.Title) }
+					if !reflect.DeepEqual(gotTable.Settings, wantTable.Settings) { t.Errorf("  Settings: got %+v, want %+v", gotTable.Settings, wantTable.Settings) }
+					if len(gotTable.Rows) != len(wantTable.Rows) {
+						t.Errorf("  NumRows: got %d, want %d", len(gotTable.Rows), len(wantTable.Rows))
+					} else {
+						for i := range gotTable.Rows {
+							if !reflect.DeepEqual(gotTable.Rows[i], wantTable.Rows[i]) {
+								t.Errorf("  Row %d: got %+v, want %+v", i, gotTable.Rows[i], wantTable.Rows[i])
+							}
+						}
+					}
+				}
+			}
+		})
+	}
+}
+
+
+func TestParseCellDirectives(t *testing.T) {
+	tests := []struct {
+		name  string
+		input string
+		want  table.Cell
+	}{
+		{
+			name:  "Only Table Reference",
+			input: "::table=ref1::",
+			want:  table.Cell{IsTableRef: true, TableRefID: "ref1", Content: "", Title: "", Colspan: 1, Rowspan: 1},
+		},
+		{
+			name:  "Table Reference with surrounding whitespace",
+			input: "  ::table=ref_two::  ",
+			want:  table.Cell{IsTableRef: true, TableRefID: "ref_two", Content: "", Title: "", Colspan: 1, Rowspan: 1},
+		},
+		{
+			name:  "Title and Table Reference",
+			input: "[MyTitle] ::table=ref3::",
+			want:  table.Cell{IsTableRef: true, TableRefID: "ref3", Content: "", Title: "MyTitle", Colspan: 1, Rowspan: 1},
+		},
+		{
+			name:  "Table Reference with Background Color",
+			input: "::table=ref4:: {bg:#123456}",
+			want:  table.Cell{IsTableRef: true, TableRefID: "ref4", Content: "", Title: "", BackgroundColor: "#123456", Colspan: 1, Rowspan: 1},
+		},
+		{
+			name:  "Table Reference with Colspan and Rowspan",
+			input: "::table=ref5:: ::colspan=2:: ::rowspan=3::",
+			want:  table.Cell{IsTableRef: true, TableRefID: "ref5", Content: "", Title: "", Colspan: 2, Rowspan: 3},
+		},
+		{
+			name:  "Title, Content Before, Table Reference, Content After",
+			input: "[CellTitle] ContentBefore ::table=ref6:: MoreContentAfter",
+			want:  table.Cell{IsTableRef: true, TableRefID: "ref6", Content: "", Title: "CellTitle", Colspan: 1, Rowspan: 1},
+		},
+		{
+			name:  "Content Before Table Reference",
+			input: "Content Before ::table=ref7::",
+			want:  table.Cell{IsTableRef: true, TableRefID: "ref7", Content: "", Title: "", Colspan: 1, Rowspan: 1},
+		},
+		{
+			name:  "Normal Content Cell",
+			input: "Just some normal content",
+			want:  table.Cell{Content: "Just some normal content", Title: "", IsTableRef: false, TableRefID: "", Colspan: 1, Rowspan: 1},
+		},
+		{
+			name:  "Normal Content Cell with Title and BG",
+			input: "[NormalTitle] Normal Content {bg:#ABCDEF}",
+			want:  table.Cell{Content: "Normal Content", Title: "NormalTitle", BackgroundColor: "#ABCDEF", IsTableRef: false, TableRefID: "", Colspan: 1, Rowspan: 1},
+		},
+		{
+            name:  "Table Reference, BG, Colspan, Rowspan - different order",
+            input: "::colspan=2:: ::table=ref8:: {bg:red} ::rowspan=4::",
+            want:  table.Cell{IsTableRef: true, TableRefID: "ref8", Content: "", BackgroundColor: "red", Colspan: 2, Rowspan: 4, Title: ""},
+        },
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			// Default cell has Colspan=1, Rowspan=1. Ensure 'want' reflects this if not specified.
+			if tt.want.Colspan == 0 { tt.want.Colspan = 1 }
+			if tt.want.Rowspan == 0 { tt.want.Rowspan = 1 }
+
+
+			got, err := parseCell(tt.input)
+			if err != nil {
+				t.Fatalf("parseCell() returned an unexpected error: %v", err)
+			}
 
 			if !reflect.DeepEqual(got, tt.want) {
-				t.Errorf("Parse() got = \n%+v\nwant = \n%+v", got, tt.want)
+				t.Errorf("parseCell() got = \n%+v\nwant = \n%+v", got, tt.want)
 			}
 		})
 	}
