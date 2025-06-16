@@ -506,6 +506,107 @@ C|D`,
             wantErr:    true,
             wantErrMsg: "invalid edge_thickness value", // Error from parseGlobalSettings
         },
+		// --- New Test Cases for main_table directive ---
+		{
+			name: "Valid main_table directive",
+			input: `
+main_table: [table2]
+
+table: [table1] First Table
+R1C1 | R1C2
+
+table: [table2] Second Table (Main)
+R2C1 | R2C2`,
+			wantTables: map[string]table.Table{
+				"table1": {ID: "table1", Title: "First Table", Rows: []table.Row{{Cells: []table.Cell{table.NewCell("", "R1C1"), table.NewCell("", "R1C2")}}}, Settings: defaultSettings},
+				"table2": {ID: "table2", Title: "Second Table (Main)", Rows: []table.Row{{Cells: []table.Cell{table.NewCell("", "R2C1"), table.NewCell("", "R2C2")}}}, Settings: defaultSettings},
+			},
+			wantMainID: "table2",
+			wantErr:    false,
+		},
+		{
+			name: "main_table directive with ID not defined",
+			input: `
+main_table: [table_not_defined]
+
+table: [table1] First Table
+R1C1 | R1C2`,
+			wantErr:    true,
+			wantErrMsg: "main_table directive specified ID 'table_not_defined', but no such table was defined",
+		},
+		{
+			name: "No main_table directive (fallback to first table)",
+			input: `
+table: [first_one] First Table
+R1C1 | R1C2
+
+table: [second_one] Second Table
+R2C1 | R2C2`,
+			wantTables: map[string]table.Table{
+				"first_one": {ID: "first_one", Title: "First Table", Rows: []table.Row{{Cells: []table.Cell{table.NewCell("", "R1C1"), table.NewCell("", "R1C2")}}}, Settings: defaultSettings},
+				"second_one": {ID: "second_one", Title: "Second Table", Rows: []table.Row{{Cells: []table.Cell{table.NewCell("", "R2C1"), table.NewCell("", "R2C2")}}}, Settings: defaultSettings},
+			},
+			wantMainID: "first_one",
+			wantErr:    false,
+		},
+		{
+			name: "main_table directive with leading/surrounding whitespace",
+			input: `
+
+  main_table: [actual_main]
+
+table: [other_table] Other
+Data | More
+
+table: [actual_main] Actual Main
+Content | Stuff`,
+			wantTables: map[string]table.Table{
+				"other_table": {ID: "other_table", Title: "Other", Rows: []table.Row{{Cells: []table.Cell{table.NewCell("", "Data"), table.NewCell("", "More")}}}, Settings: defaultSettings},
+				"actual_main": {ID: "actual_main", Title: "Actual Main", Rows: []table.Row{{Cells: []table.Cell{table.NewCell("", "Content"), table.NewCell("", "Stuff")}}}, Settings: defaultSettings},
+			},
+			wantMainID: "actual_main",
+			wantErr:    false,
+		},
+		{
+			name: "Malformed main_table directive (not_an_id_format) - should be ignored",
+			input: `
+main_table: not_an_id_format
+
+table: [fallback_table] Fallback
+A | B`,
+			wantTables: map[string]table.Table{
+				"fallback_table": {ID: "fallback_table", Title: "Fallback", Rows: []table.Row{{Cells: []table.Cell{table.NewCell("", "A"), table.NewCell("", "B")}}}, Settings: defaultSettings},
+			},
+			wantMainID: "fallback_table", // Ignored malformed directive, falls back to first table
+			wantErr:    false,
+		},
+		{
+			name: "Malformed main_table directive (incomplete_id) - should be ignored",
+			input: `
+main_table: [incomplete_id
+
+table: [fallback_table] Fallback
+A | B`,
+			wantTables: map[string]table.Table{
+				"fallback_table": {ID: "fallback_table", Title: "Fallback", Rows: []table.Row{{Cells: []table.Cell{table.NewCell("", "A"), table.NewCell("", "B")}}}, Settings: defaultSettings},
+			},
+			wantMainID: "fallback_table",
+			wantErr:    false,
+		},
+		{
+			name: "Malformed main_table directive (empty_id) - should be ignored",
+			input: `
+main_table: []
+
+table: [fallback_table] Fallback
+A | B`,
+			wantTables: map[string]table.Table{
+				"fallback_table": {ID: "fallback_table", Title: "Fallback", Rows: []table.Row{{Cells: []table.Cell{table.NewCell("", "A"), table.NewCell("", "B")}}}, Settings: defaultSettings},
+			},
+			wantMainID: "fallback_table",
+			wantErr:    false,
+		},
+		// --- End of New Test Cases for main_table directive ---
 	}
 
 	for _, tt := range tests {

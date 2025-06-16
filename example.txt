@@ -1,12 +1,14 @@
-table: [inner_contacts] Contact Details {bg_table:#FFFFE0, bg_cell:#FFFFAA, edge_color:#CCAA66}
-Type | Detail
-Email | test@example.com
-Phone | 123-456-7890
-Web | example.com {bg:#FFFFDD}
+main_table: [main_overview]
 
 table: [main_overview] Main Overview {bg_table:#E0FFE0, edge_color:#333333, bg_cell:#F0FFF0}
 [ID] User ID | [Name] Full Name | [ContactInfo] Contact Information {bg:#DDEEDD}
 1 | Alice Wonderland | ::table=inner_contacts::
 2 | Bob The Builder | Email: bob@example.com
 3 | Charlie Brown | Tel: 555-1234 {bg:#EEFFEE}
-4 | Diana Prince | Also uses ::table=inner_contacts::
+4 | Also uses ::rowspan=2:: ::table=inner_contacts::
+
+table: [inner_contacts] Contact Details {bg_table:#FFFFE0, bg_cell:#FFFFAA, edge_color:#CCAA66}
+Type | Detail
+Email | test@example.com
+Phone | 123-456-7890
+Web | example.com {bg:#FFFFDD}

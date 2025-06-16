@@ -17,11 +17,48 @@ func ParseAllText(fullInput string) (table.AllTables, error) {
 		return allTables, nil // Return empty AllTables if input is empty
 	}
 
-	lines := strings.Split(trimmedFullInput, "\n")
-	var currentTableLines []string
-	var tableStartLineNumber int
+	initialLines := strings.Split(trimmedFullInput, "\n")
+	var contentLines []string
+	var explicitMainTableID string
 
-	for i, line := range lines {
+	mainTableRegex := regexp.MustCompile(`^main_table:\s*\[([\w\-]+)\]`)
+	firstContentLineIndex := 0
+
+	for i, line := range initialLines {
+		trimmedLine := strings.TrimSpace(line)
+		if trimmedLine == "" {
+			if explicitMainTableID == "" && len(allTables.Tables) == 0 { // Only skip leading empty lines before any directive/table
+				firstContentLineIndex = i + 1
+			}
+			continue // Skip all empty lines
+		}
+		if explicitMainTableID == "" && len(allTables.Tables) == 0 { // Check for directive only if not already found and no tables parsed
+			matches := mainTableRegex.FindStringSubmatch(trimmedLine)
+			if len(matches) == 2 {
+				explicitMainTableID = matches[1]
+				firstContentLineIndex = i + 1 // Content starts after this directive line
+				// log.Printf("Found main_table directive, ID: %s. Content starts line %d", explicitMainTableID, firstContentLineIndex)
+				continue // Directive processed, move to next line or it becomes first content line if loop ends
+			}
+		}
+		// If it's not an empty line and not the directive (or directive already processed),
+		// then this is where content lines for table parsing should start.
+		// However, the main loop below will re-evaluate all lines from firstContentLineIndex.
+		// We just need to ensure firstContentLineIndex is correctly set.
+		// If the first non-empty line is not the directive, it's part of table content.
+		break // Stop scanning for main_table directive after the first non-empty, non-directive line.
+	}
+
+	if firstContentLineIndex < len(initialLines) {
+		contentLines = initialLines[firstContentLineIndex:]
+	} else {
+		contentLines = []string{} // No content lines left if directive was last or only empty lines
+	}
+
+	var currentTableLines []string
+	var tableStartLineNumber int // Relative to contentLines
+
+	for i, line := range contentLines {
 		if strings.HasPrefix(line, "table:") {
 			// If currentTableLines has content, then a previous table definition has ended.
 			if len(currentTableLines) > 0 {
@@ -58,16 +95,27 @@ func ParseAllText(fullInput string) (table.AllTables, error) {
 			return table.AllTables{}, fmt.Errorf("error parsing table starting at line %d: %w", tableStartLineNumber, err)
 		}
 		if parsedTable.ID == "" {
-			return table.AllTables{}, fmt.Errorf("parsed table starting at line %d is missing an ID", tableStartLineNumber)
+			// Adjust line number report if necessary, though tableStartLineNumber is relative to contentLines
+			return table.AllTables{}, fmt.Errorf("parsed table starting at content line %d is missing an ID", tableStartLineNumber)
 		}
 		if _, exists := allTables.Tables[parsedTable.ID]; exists {
-			return table.AllTables{}, fmt.Errorf("duplicate table ID '%s' found (originally from table at line %d)", parsedTable.ID, tableStartLineNumber)
+			return table.AllTables{}, fmt.Errorf("duplicate table ID '%s' found (originally from content line %d)", parsedTable.ID, tableStartLineNumber)
 		}
 		allTables.Tables[parsedTable.ID] = parsedTable
-		if allTables.MainTableID == "" {
+		// Default MainTableID assignment (if no explicit directive)
+		if explicitMainTableID == "" && allTables.MainTableID == "" {
 			allTables.MainTableID = parsedTable.ID
 		}
 	}
+
+	// After processing all tables, handle explicitMainTableID
+	if explicitMainTableID != "" {
+		if _, exists := allTables.Tables[explicitMainTableID]; !exists {
+			return table.AllTables{}, fmt.Errorf("main_table directive specified ID '%s', but no such table was defined", explicitMainTableID)
+		}
+		allTables.MainTableID = explicitMainTableID // Override with explicitly set ID
+	}
+
 
 	return allTables, nil
 }
