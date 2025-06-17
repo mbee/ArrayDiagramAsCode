@@ -1,6 +1,6 @@
 # Diagram Generator Table Syntax
 
-This document explains the syntax used to define tables for the diagram generator.
+This document explains the syntax used to define tables for the diagram generator. The example images shown below are generated from the definitions in [`examples_for_readme.txt`](./examples_for_readme.txt) using the [`generate_readme_images.sh`](./generate_readme_images.sh) script.
 
 ## Basic Table Structure
 
@@ -39,6 +39,19 @@ table: [summary-table]
 ... content ...
 ```
 If the `main_table` directive is omitted, the first table defined in the file will be considered the main table. If a table ID is specified in `main_table` but no table with that ID is found, an error will occur.
+
+#### Example Syntax
+```text
+# Example 1: Simple Table
+main_table: [simple-table]
+table: [simple-table] My First Table {bg_table:#F5F5F5, bg_cell:#FFFFFF, edge_color:#666666}
+[HeaderCol1] First Column Header | [HeaderCol2] Second Column Header
+Row 1, Cell 1 | Row 1, Cell 2
+Row 2, Cell 1 | Row 2, Cell 2 has\nmultiple lines of text.
+```
+
+#### Rendered Output
+![Simple Table Example](doc/images/simple-table.png)
 
 ## Cell Content and Structure
 
@@ -157,6 +170,26 @@ In this example:
 
 **Note:** Both `rowspan` and `colspan` directives are processed and removed from the final displayed content of the cell.
 
+### Combined Styling and Spanning Example
+
+This example demonstrates various global table styles, cell-specific background colors, and how `colspan` and `rowspan` affect the layout.
+
+#### Example Syntax
+```text
+# Example 2: Styling and Spanning
+main_table: [styling-spanning-table]
+table: [styling-spanning-table] Styling and Spanning Demo {bg_table:#E0FFE0, edge_color:#006400, edge_thickness:2}
+Feature ::colspan=3:: {bg:#A0D0A0}
+[Type] Type {bg:#C0E0C0} | [Description] Description {bg:#C0E0C0} | [Notes] Notes {bg:#C0E0C0}
+Rowspan Example ::rowspan=2:: {bg:#D0F0D0} | This cell spans two rows. | Initial note for rowspan.
+                                          | Spanned content replaces this cell. | Second note for rowspan.
+Colspan Example {bg:#D0F0D0} | This cell uses colspan. ::colspan=2:: {bg:#E0F0E0} |
+Individual Cell Style | Normal | Special Cell {bg:#FFDAB9}
+```
+
+#### Rendered Output
+![Table Styling and Cell Spanning Example](doc/images/styling-spanning-table.png)
+
 ## Fixed Cell Dimensions
 
 You can suggest specific dimensions for cells using `fixed_width` and `fixed_height` directives. The rendering engine will attempt to honor these dimensions. Content within such cells will be wrapped, or clipped if it exceeds the available space.
@@ -204,6 +237,21 @@ Short ::fixed_width=80:: ::fixed_height=40:: | Text that might be clipped ::fixe
 
 **Note:** These directives are processed and removed from the final displayed content of the cell. The actual rendered size might vary slightly due to padding and other layout calculations.
 
+#### Example Syntax
+```text
+# Example 3: Fixed Cell Dimensions
+main_table: [fixed-dimensions-table]
+table: [fixed-dimensions-table] Fixed Cell Dimensions {bg_table:#FFF5E0, bg_cell:#FFFDF5}
+Description | Cell with Fixed Dimensions
+Short Text | This cell has a fixed width of 150px and a fixed height of 60px. The text inside will wrap, and if it's too long, it might be clipped. ::fixed_width=150:: ::fixed_height=60::
+More Text | Fixed Width only ::fixed_width=100::
+Even More | Fixed Height only ::fixed_height=40:: This text might be clipped if it's too long for the height.
+Another Row | Both fixed: ::fixed_width=80:: ::fixed_height=30::
+```
+
+#### Rendered Output
+![Fixed Cell Dimensions Example](doc/images/fixed-dimensions-table.png)
+
 ## Nested Tables
 
 One of the powerful features of this syntax is the ability to nest tables within the cells of other tables. This is achieved by referencing another table's ID.
@@ -232,6 +280,25 @@ Notes | This is a note.
 ```
 In this example, the "Details" column of `outer-table` will render `details-for-a` and `details-for-b` within its cells.
 
+#### Example Syntax
+The main table `basic-nested-outer` references `inner-table-1` in its cells.
+```text
+# Example 4: Basic Nested Table
+main_table: [basic-nested-outer]
+table: [basic-nested-outer] Outer Table with Nested Content {bg_table:#E6E6FA}
+Section | Details Area ::fixed_width=250:: ::fixed_height=120::
+Alpha | Contains details from 'inner-table-1' ::table=inner-table-1::
+Beta  | Also contains 'inner-table-1', but with different parent cell text. ::table=inner-table-1:: ::inner_align=center:: ::inner_scale=fit_both::
+
+table: [inner-table-1] Inner Table One {bg_table:#FFFACD, bg_cell:#FFFFE0, edge_color:#BDB76B}
+Key | Value
+PropA | Value A
+PropB | Value B \n (on two lines)
+```
+
+#### Rendered Output
+![Basic Nested Table Example](doc/images/basic-nested-outer.png)
+
 ### Inner Table Layout
 
 When nesting tables, you often want to control how the inner table is positioned and scaled within the parent cell. This is done with `inner_align` and `inner_scale` directives, used in conjunction with `::table=...::`. These directives apply to the *content* of the cell (the nested table).
@@ -250,6 +317,41 @@ Specifies how the nested table should be aligned within the available space of t
 
 Default is `top_left`.
 
+The following examples demonstrate different alignment modes. They all use `::inner_scale=none::` to show the inner table at its natural size, making alignment effects clearer. The parent cell is `::fixed_width=220:: ::fixed_height=100::`.
+
+**Shared Inner Table Definition:**
+```text
+table: [inner-table-for-aligning] Inner Table (for aligning demos) {bg_table:#FAFAD2, edge_color:#B0E0E6}
+Info A | Info B
+X | Y
+```
+##### Alignment: `top_left` (Default)
+The parent cell in this example is `Parent Cell (220x100) ::fixed_width=220:: ::fixed_height=100::`.
+The relevant part of the cell definition using the directive is:
+```text
+::table=inner-table-for-aligning:: ::inner_scale=none:: | Default align (top_left). Using 'none' scale to show natural size.
+```
+**Rendered Output:**
+![Nested Table - Align: top_left](doc/images/nested-align-tl-outer.png)
+
+##### Alignment: `center`
+The parent cell in this example is `Parent Cell (220x100) ::fixed_width=220:: ::fixed_height=100::`.
+The relevant part of the cell definition using the directive is:
+```text
+::table=inner-table-for-aligning:: ::inner_scale=none:: ::inner_align=center:: | Centered alignment.
+```
+**Rendered Output:**
+![Nested Table - Align: center](doc/images/nested-align-center-outer.png)
+
+##### Alignment: `bottom_right`
+The parent cell in this example is `Parent Cell (220x100) ::fixed_width=220:: ::fixed_height=100::`.
+The relevant part of the cell definition using the directive is:
+```text
+::table=inner-table-for-aligning:: ::inner_scale=none:: ::inner_align=bottom_right:: | Bottom-right alignment.
+```
+**Rendered Output:**
+![Nested Table - Align: bottom_right](doc/images/nested-align-br-outer.png)
+
 #### Inner Scaling (`::inner_scale::`)
 
 Specifies how the nested table should be scaled to fit within the parent cell's content area.
@@ -266,17 +368,57 @@ Specifies how the nested table should be scaled to fit within the parent cell's 
 
 Default is `none`.
 
-**Example of Inner Layout Directives:**
-```
-table: [parent-showcase] Showcase of Inner Table Layout
-Description | Nested Table Area ::fixed_width=250:: ::fixed_height=150::
-Fit Width, Bottom Right | ::table=sample-inner:: ::inner_scale=fit_width:: ::inner_align=bottom_right::
-Fit Both, Centered | ::table=sample-inner:: ::inner_scale=fit_both:: ::inner_align=center::
-Stretched to Fill | ::table=sample-inner:: ::inner_scale=fill_stretch::
+The following examples demonstrate different scaling modes. They all use the `inner-table-for-scaling` defined below, nested within a parent cell that has a fixed width and height (`::fixed_width=200:: ::fixed_height=80::`).
 
-table: [sample-inner] Small Inner Table {bg_table:#E6E6FA, bg_cell:#FAFAD2}
-Col A | Col B
-1 | 2
-3 | 4
+**Shared Inner Table Definition:**
+```text
+table: [inner-table-for-scaling] Inner Table (for scaling demos) {bg_table:#FFFFE0, edge_color:#FFD700}
+Column X | Column Y
+Data 123 | Data 456
+More Data | And More
 ```
-This example demonstrates how different combinations of `inner_scale` and `inner_align` affect the rendering of `sample-inner` within the "Nested Table Area" cells of `parent-showcase`.
+
+##### Scale Mode: `none` (Default)
+The parent cell in this example is defined as: `Parent Cell (200x80) ::fixed_width=200:: ::fixed_height=80::`.
+The relevant part of the cell definition using the directive is:
+```text
+::table=inner-table-for-scaling:: | Default scaling (none). Inner table might be clipped or smaller than cell.
+```
+**Rendered Output:**
+![Nested Table - Scale: none](doc/images/nested-scale-none-outer.png)
+
+##### Scale Mode: `fit_width`
+The parent cell in this example is defined as: `Parent Cell (200x80) ::fixed_width=200:: ::fixed_height=80::`.
+The relevant part of the cell definition using the directive is:
+```text
+::table=inner-table-for-scaling:: ::inner_scale=fit_width:: | Scales to fit width. Height adjusts by aspect ratio.
+```
+**Rendered Output:**
+![Nested Table - Scale: fit_width](doc/images/nested-scale-fitwidth-outer.png)
+
+##### Scale Mode: `fit_height`
+The parent cell in this example is defined as: `Parent Cell (200x80) ::fixed_width=200:: ::fixed_height=80::`.
+The relevant part of the cell definition using the directive is:
+```text
+::table=inner-table-for-scaling:: ::inner_scale=fit_height:: | Scales to fit height. Width adjusts by aspect ratio.
+```
+**Rendered Output:**
+![Nested Table - Scale: fit_height](doc/images/nested-scale-fitheight-outer.png)
+
+##### Scale Mode: `fit_both`
+The parent cell in this example is defined as: `Parent Cell (200x80) ::fixed_width=200:: ::fixed_height=80::`.
+The relevant part of the cell definition using the directive is:
+```text
+::table=inner-table-for-scaling:: ::inner_scale=fit_both:: | Scales to fit both width and height, maintaining aspect ratio.
+```
+**Rendered Output:**
+![Nested Table - Scale: fit_both](doc/images/nested-scale-fitboth-outer.png)
+
+##### Scale Mode: `fill_stretch`
+The parent cell in this example is defined as: `Parent Cell (200x80) ::fixed_width=200:: ::fixed_height=80::`.
+The relevant part of the cell definition using the directive is:
+```text
+::table=inner-table-for-scaling:: ::inner_scale=fill_stretch:: | Stretches to fill entire cell, ignoring aspect ratio.
+```
+**Rendered Output:**
+![Nested Table - Scale: fill_stretch](doc/images/nested-scale-fillstretch-outer.png)
