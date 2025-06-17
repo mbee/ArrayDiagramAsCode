@@ -8,28 +8,155 @@ import (
 	"strings"
 )
 
-// Parse takes a string input and attempts to parse it into a Table object.
-// It now also parses global table settings from the title line and
+// ParseAllText takes a string input that may contain multiple table definitions
+// and parses them into an AllTables struct.
+func ParseAllText(fullInput string) (table.AllTables, error) {
+	allTables := table.AllTables{Tables: make(map[string]table.Table)}
+	trimmedFullInput := strings.TrimSpace(fullInput)
+	if trimmedFullInput == "" {
+		return allTables, nil // Return empty AllTables if input is empty
+	}
+
+	initialLines := strings.Split(trimmedFullInput, "\n")
+	var contentLines []string
+	var explicitMainTableID string
+
+	mainTableRegex := regexp.MustCompile(`^main_table:\s*\[([\w\-]+)\]`)
+	firstContentLineIndex := 0
+
+	for i, line := range initialLines {
+		trimmedLine := strings.TrimSpace(line)
+		if trimmedLine == "" {
+			if explicitMainTableID == "" && len(allTables.Tables) == 0 { // Only skip leading empty lines before any directive/table
+				firstContentLineIndex = i + 1
+			}
+			continue // Skip all empty lines
+		}
+		if explicitMainTableID == "" && len(allTables.Tables) == 0 { // Check for directive only if not already found and no tables parsed
+			matches := mainTableRegex.FindStringSubmatch(trimmedLine)
+			if len(matches) == 2 {
+				explicitMainTableID = matches[1]
+				firstContentLineIndex = i + 1 // Content starts after this directive line
+				// log.Printf("Found main_table directive, ID: %s. Content starts line %d", explicitMainTableID, firstContentLineIndex)
+				continue // Directive processed, move to next line or it becomes first content line if loop ends
+			}
+		}
+		// If it's not an empty line and not the directive (or directive already processed),
+		// then this is where content lines for table parsing should start.
+		// However, the main loop below will re-evaluate all lines from firstContentLineIndex.
+		// We just need to ensure firstContentLineIndex is correctly set.
+		// If the first non-empty line is not the directive, it's part of table content.
+		break // Stop scanning for main_table directive after the first non-empty, non-directive line.
+	}
+
+	if firstContentLineIndex < len(initialLines) {
+		contentLines = initialLines[firstContentLineIndex:]
+	} else {
+		contentLines = []string{} // No content lines left if directive was last or only empty lines
+	}
+
+	var currentTableLines []string
+	var tableStartLineNumber int // Relative to contentLines
+
+	for i, line := range contentLines {
+		if strings.HasPrefix(line, "table:") {
+			// If currentTableLines has content, then a previous table definition has ended.
+			if len(currentTableLines) > 0 {
+				tableDef := strings.Join(currentTableLines, "\n")
+				parsedTable, err := parseSingleTableDefinition(tableDef)
+				if err != nil {
+					return table.AllTables{}, fmt.Errorf("error parsing table starting at line %d: %w", tableStartLineNumber, err)
+				}
+				if parsedTable.ID == "" {
+					return table.AllTables{}, fmt.Errorf("parsed table starting at line %d is missing an ID", tableStartLineNumber)
+				}
+				if _, exists := allTables.Tables[parsedTable.ID]; exists {
+					return table.AllTables{}, fmt.Errorf("duplicate table ID '%s' found (originally from table at line %d)", parsedTable.ID, tableStartLineNumber)
+				}
+				allTables.Tables[parsedTable.ID] = parsedTable
+				if allTables.MainTableID == "" {
+					allTables.MainTableID = parsedTable.ID
+				}
+				currentTableLines = nil // Reset for the next table
+			}
+			tableStartLineNumber = i + 1 // Store line number (1-indexed) for error reporting
+			currentTableLines = append(currentTableLines, line)
+		} else if len(currentTableLines) > 0 {
+			// Only append lines if we are currently inside a table definition
+			currentTableLines = append(currentTableLines, line)
+		}
+	}
+
+	// Process the last table definition if any
+	if len(currentTableLines) > 0 {
+		tableDef := strings.Join(currentTableLines, "\n")
+		parsedTable, err := parseSingleTableDefinition(tableDef)
+		if err != nil {
+			return table.AllTables{}, fmt.Errorf("error parsing table starting at line %d: %w", tableStartLineNumber, err)
+		}
+		if parsedTable.ID == "" {
+			// Adjust line number report if necessary, though tableStartLineNumber is relative to contentLines
+			return table.AllTables{}, fmt.Errorf("parsed table starting at content line %d is missing an ID", tableStartLineNumber)
+		}
+		if _, exists := allTables.Tables[parsedTable.ID]; exists {
+			return table.AllTables{}, fmt.Errorf("duplicate table ID '%s' found (originally from content line %d)", parsedTable.ID, tableStartLineNumber)
+		}
+		allTables.Tables[parsedTable.ID] = parsedTable
+		// Default MainTableID assignment (if no explicit directive)
+		if explicitMainTableID == "" && allTables.MainTableID == "" {
+			allTables.MainTableID = parsedTable.ID
+		}
+	}
+
+	// After processing all tables, handle explicitMainTableID
+	if explicitMainTableID != "" {
+		if _, exists := allTables.Tables[explicitMainTableID]; !exists {
+			return table.AllTables{}, fmt.Errorf("main_table directive specified ID '%s', but no such table was defined", explicitMainTableID)
+		}
+		allTables.MainTableID = explicitMainTableID // Override with explicitly set ID
+	}
+
+
+	return allTables, nil
+}
+
+// parseSingleTableDefinition takes a string input for a single table definition
+// and attempts to parse it into a Table object.
+// It also parses global table settings from the title line and
 // rowspan and background color from individual cells.
-func Parse(input string) (table.Table, error) {
+func parseSingleTableDefinition(tableInput string) (table.Table, error) {
 	// Initialize table with default settings. These can be overridden by parsed settings.
 	t := table.Table{
 		Settings: table.DefaultGlobalSettings(),
 		Rows:     []table.Row{}, // Ensure Rows is initialized
 	}
 
-	trimmedInput := strings.TrimSpace(input)
+	trimmedInput := strings.TrimSpace(tableInput)
 	if trimmedInput == "" {
-		return t, nil // Return empty table with defaults if input is empty
+		// This case should ideally be handled by the caller (ParseAllText)
+		// by not calling parseSingleTableDefinition with empty input.
+		// However, returning an empty table or an error are options.
+		// For now, let's assume valid non-empty input for a single table.
+		return t, fmt.Errorf("empty input provided to parseSingleTableDefinition")
 	}
 
 	lines := strings.Split(trimmedInput, "\n")
-	firstLineIdx := 0
+	// A single table definition must start with "table:"
+	if len(lines) == 0 || !strings.HasPrefix(lines[0], "table:") {
+		return table.Table{}, fmt.Errorf("table definition must start with 'table:'")
+	}
 
-	// Parse table title and global settings from the first line if present
-	if strings.HasPrefix(lines[0], "table:") {
-		titleAndSettingsLine := strings.TrimPrefix(lines[0], "table:")
-		firstLineIdx = 1
+	titleAndSettingsLine := strings.TrimPrefix(lines[0], "table:")
+	firstLineIdx := 1 // Start processing rows from the next line
+
+		// Regex to capture optional table ID: e.g., "[my-id] Title {settings}"
+		idRegex := regexp.MustCompile(`^\s*\[([\w\-]+)\](.*)`)
+		idMatches := idRegex.FindStringSubmatch(titleAndSettingsLine)
+
+		if len(idMatches) == 3 { // 0: full match, 1: ID, 2: rest of the line
+			t.ID = idMatches[1]
+			titleAndSettingsLine = strings.TrimSpace(idMatches[2])
+		}
 
 		// Regex to separate title from settings block (e.g., "My Title {setting:value}")
 		// Title part is (.*?), settings part is (.*) within {}.
@@ -50,7 +177,7 @@ func Parse(input string) (table.Table, error) {
 		if len(lines) <= 1 { // Only title/settings line, no rows
 			return t, nil
 		}
-	}
+	// THE ERRONEOUS '}' WAS HERE (after the if block, before "Process actual table rows")
 
 	// Process actual table rows
 	for i := firstLineIdx; i < len(lines); i++ {
@@ -193,14 +320,86 @@ func parseCell(cellInput string) (table.Cell, error) {
 		tempStr = strings.TrimSpace(matches[1] + " " + matches[3])
 	}
 
-	// What's left in tempStr after removing all directives is the actual content.
-	content := strings.TrimSpace(tempStr)
+	// 5. Extract Table Reference (e.g., "::table=ref-id::")
+	// This should ideally be the only significant content if present.
+	isTableRef := false
+	tableRefID := ""
+	// Regex: `(.*?)::table=([\w\-]+)::(.*)`
+	tableRefRegex := regexp.MustCompile(`(.*?)::table=([\w\-]+)::(.*)`)
+	if matches := tableRefRegex.FindStringSubmatch(tempStr); len(matches) == 4 {
+		// If a table reference is found, it takes precedence.
+		// Content before or after the directive will be trimmed.
+		isTableRef = true
+		tableRefID = strings.TrimSpace(matches[2])
+		// tempStr is reconstructed from parts not including the table directive.
+		// If other text was present (matches[1] or matches[3]), it's kept for now,
+		// but will be cleared if isTableRef is true.
+		tempStr = strings.TrimSpace(matches[1] + " " + matches[3])
+	}
 
-	// Create cell using NewCell (which sets defaults) and then override.
-	finalCell := table.NewCell(title, content)
+	// Process \n for multiline content *before* final trimming for content variable
+	// but *after* directives that might be part of tempStr are removed.
+
+	// Create cell using NewCell which sets defaults (including for new fields)
+	// Note: content is not yet set on finalCell, it's derived from the final tempStr later.
+	finalCell := table.NewCell(title, "") // Initialize with empty content temporarily
 	finalCell.Colspan = colspan
 	finalCell.Rowspan = rowspan
 	finalCell.BackgroundColor = bgColor
+	finalCell.IsTableRef = isTableRef
+	finalCell.TableRefID = tableRefID
+
+	// 6. Parse ::inner_align=VALUE::
+	innerAlignRegex := regexp.MustCompile(`(.*?)::inner_align=([\w\-]+)::(.*)`)
+	if matches := innerAlignRegex.FindStringSubmatch(tempStr); len(matches) == 4 {
+		finalCell.InnerTableAlignment = strings.TrimSpace(matches[2])
+		tempStr = strings.TrimSpace(matches[1] + " " + matches[3])
+	}
+
+	// 7. Parse ::inner_scale=MODE::
+	innerScaleRegex := regexp.MustCompile(`(.*?)::inner_scale=([\w\_]+)::(.*)`)
+	if matches := innerScaleRegex.FindStringSubmatch(tempStr); len(matches) == 4 {
+		finalCell.InnerTableScaleMode = strings.TrimSpace(matches[2])
+		tempStr = strings.TrimSpace(matches[1] + " " + matches[3])
+	}
+
+	// 8. Parse ::fixed_width=VALUE_PX::
+	fixedWidthRegex := regexp.MustCompile(`(.*?)::fixed_width=([\d\.]+)::(.*)`)
+	if matches := fixedWidthRegex.FindStringSubmatch(tempStr); len(matches) == 4 {
+		valStr := strings.TrimSpace(matches[2])
+		parsedVal, err := strconv.ParseFloat(valStr, 64)
+		if err == nil && parsedVal >= 0 {
+			finalCell.FixedWidth = parsedVal
+		} else {
+			// Consider adding import "log" and using log.Printf for warnings
+			fmt.Printf("Warning: Invalid value for fixed_width '%s' in cell input '%s'. Ignoring.\n", valStr, cellInput)
+		}
+		tempStr = strings.TrimSpace(matches[1] + " " + matches[3])
+	}
+
+	// 9. Parse ::fixed_height=VALUE_PX::
+	fixedHeightRegex := regexp.MustCompile(`(.*?)::fixed_height=([\d\.]+)::(.*)`)
+	if matches := fixedHeightRegex.FindStringSubmatch(tempStr); len(matches) == 4 {
+		valStr := strings.TrimSpace(matches[2])
+		parsedVal, err := strconv.ParseFloat(valStr, 64)
+		if err == nil && parsedVal >= 0 {
+			finalCell.FixedHeight = parsedVal
+		} else {
+			fmt.Printf("Warning: Invalid value for fixed_height '%s' in cell input '%s'. Ignoring.\n", valStr, cellInput)
+		}
+		tempStr = strings.TrimSpace(matches[1] + " " + matches[3])
+	}
+
+	// Process \n for multiline content
+	tempStr = strings.ReplaceAll(tempStr, "\\n", "\n")
+
+	// What's left in tempStr after removing all directives and processing newlines is the actual content.
+	finalCell.Content = strings.TrimSpace(tempStr) // Set the final content
+
+	// If the cell is a table reference, its direct content should be empty.
+	if finalCell.IsTableRef {
+		finalCell.Content = ""
+	}
 
 	return finalCell, nil
 }

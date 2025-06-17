@@ -196,7 +196,7 @@ func PopulateOccupationMap(inputTable *table.Table) (*LayoutGrid, error) {
 // --- Other layout functions (LayoutConstants, CalculateColumnWidthsAndRowHeights, etc.) follow ---
 // (Assuming they are present from previous steps and are correct)
 type LayoutConstants struct {FontPath string; FontSize, LineHeightMultiplier, Padding, MinCellWidth, MinCellHeight float64}
-func (lg *LayoutGrid) CalculateColumnWidthsAndRowHeights(constants LayoutConstants) error {
+func (lg *LayoutGrid) CalculateColumnWidthsAndRowHeights(constants LayoutConstants, allTables map[string]table.Table) error {
 	if lg.NumLogicalCols == 0 || lg.NumLogicalRows == 0 { return nil }
 	tempDc := gg.NewContext(1, 1)
 	if err := tempDc.LoadFontFace(constants.FontPath, constants.FontSize); err != nil { return fmt.Errorf("failed to load font '%s': %w", constants.FontPath, err) }
@@ -206,26 +206,138 @@ func (lg *LayoutGrid) CalculateColumnWidthsAndRowHeights(constants LayoutConstan
 		if firstR != -1 { uniqueCellPositions[cell] = cellGridPos{firstR, firstC} }; processedForPos[cell] = true }}}
 	for i := range lg.ColumnWidths { lg.ColumnWidths[i] = 0.0 }
 	for cell, pos := range uniqueCellPositions {
-		textIdealW, _, err := calculateCellContentSizeInternal(tempDc, cell, constants.FontSize, constants.LineHeightMultiplier, constants.Padding, 10000.0)
-		if err != nil { log.Printf("Warning (ideal width calc): %v", err); continue }; cellFullIdealW := math.Max(textIdealW+(2*constants.Padding), constants.MinCellWidth)
+		textIdealW, _, err := calculateCellContentSizeInternal(tempDc, cell, constants.FontSize, constants.LineHeightMultiplier, constants.Padding, 10000.0, allTables, constants)
+		if err != nil {
+			log.Printf("Warning (ideal width calc for cell '%s'): %v", cell.Title, err)
+			// Fallback to MinCellWidth if content calculation fails, ensuring textIdealW is for content area
+			textIdealW = constants.MinCellWidth - (2*constants.Padding)
+			if textIdealW < 0 { textIdealW = 0 }
+		}
+
+		var cellFullIdealW float64
+		if cell.FixedWidth > 0.0 { // FixedWidth is set
+			cellFullIdealW = cell.FixedWidth
+		} else { // Not fixed, calculate from content
+			cellFullIdealW = math.Max(textIdealW + (2*constants.Padding), constants.MinCellWidth)
+		}
+
 		if cell.Colspan == 1 { if cellFullIdealW > lg.ColumnWidths[pos.c] { lg.ColumnWidths[pos.c] = cellFullIdealW }
 		} else { currentSpanWidth := 0.0; for i := 0; i < cell.Colspan; i++ { if pos.c+i < lg.NumLogicalCols { currentSpanWidth += lg.ColumnWidths[pos.c+i] } }
 			if cellFullIdealW > currentSpanWidth { shortfall := cellFullIdealW - currentSpanWidth; widthToAddPerCol := shortfall / float64(cell.Colspan); for i := 0; i < cell.Colspan; i++ { if pos.c+i < lg.NumLogicalCols { lg.ColumnWidths[pos.c+i] += widthToAddPerCol } }}}}
 	for i := range lg.RowHeights { lg.RowHeights[i] = 0.0 }
 	for cell, pos := range uniqueCellPositions {
 		currentCellActualDrawingWidth := 0.0; for i := 0; i < cell.Colspan; i++ { if pos.c+i < lg.NumLogicalCols { currentCellActualDrawingWidth += lg.ColumnWidths[pos.c+i] } }
-		_, finalTextH, err := calculateCellContentSizeInternal(tempDc, cell, constants.FontSize, constants.LineHeightMultiplier, constants.Padding, currentCellActualDrawingWidth)
-		if err != nil { log.Printf("Warning (final height calc): %v", err); continue }; cellFullFinalH := math.Max(finalTextH+(2*constants.Padding), constants.MinCellHeight)
+		_, finalTextH, err := calculateCellContentSizeInternal(tempDc, cell, constants.FontSize, constants.LineHeightMultiplier, constants.Padding, currentCellActualDrawingWidth, allTables, constants)
+		if err != nil {
+			log.Printf("Warning (final height calc for cell '%s'): %v", cell.Title, err)
+			// Fallback to MinCellHeight if content calculation fails, ensuring finalTextH is for content area
+			finalTextH = constants.MinCellHeight - (2*constants.Padding)
+			if finalTextH < 0 { finalTextH = 0 }
+		}
+
+		var cellFullFinalH float64
+		if cell.FixedHeight > 0.0 { // FixedHeight is set
+			cellFullFinalH = cell.FixedHeight
+		} else { // Not fixed, calculate from content
+			cellFullFinalH = math.Max(finalTextH + (2*constants.Padding), constants.MinCellHeight)
+		}
+
 		if cell.Rowspan == 1 { if cellFullFinalH > lg.RowHeights[pos.r] { lg.RowHeights[pos.r] = cellFullFinalH }
 		} else { currentSpanHeight := 0.0; for i := 0; i < cell.Rowspan; i++ { if pos.r+i < lg.NumLogicalRows { currentSpanHeight += lg.RowHeights[pos.r+i] } }
             if cellFullFinalH > currentSpanHeight { shortfall := cellFullFinalH - currentSpanHeight; heightToAddPerRow := shortfall / float64(cell.Rowspan); for i := 0; i < cell.Rowspan; i++ { if pos.r+i < lg.NumLogicalRows { lg.RowHeights[pos.r+i] += heightToAddPerRow } }}}}
 	return nil
 }
-func calculateCellContentSizeInternal(dc *gg.Context, cell *table.Cell, fontSize, lineHeightMultiplier, padding, availableWidthForTextAndPadding float64) (textBlockWidth float64, textBlockHeight float64, err error) {
-	currentTotalHeight, actualMaxWidthUsed, lineHeight := 0.0, 0.0, fontSize*lineHeightMultiplier; textAvailableWidth := availableWidthForTextAndPadding - (2 * padding); if textAvailableWidth < 0 { textAvailableWidth = 0.0 }
-	if cell.Title != "" { titleText := "[" + cell.Title + "]"; titleLines := dc.WordWrap(titleText, textAvailableWidth); if len(titleLines) == 0 && titleText != "" { titleLines = []string{""} }; for _, line := range titleLines { w, _ := dc.MeasureString(line); if w > actualMaxWidthUsed { actualMaxWidthUsed = w } }; currentTotalHeight += float64(len(titleLines)) * lineHeight }
-	if cell.Content != "" { if cell.Title != "" && currentTotalHeight > 0 { currentTotalHeight += lineHeight * 0.25 }; contentLines := dc.WordWrap(cell.Content, textAvailableWidth); if len(contentLines) == 0 && cell.Content != "" { contentLines = []string{""} }; for _, line := range contentLines { w, _ := dc.MeasureString(line); if w > actualMaxWidthUsed { actualMaxWidthUsed = w } }; currentTotalHeight += float64(len(contentLines)) * lineHeight }
-	return actualMaxWidthUsed, currentTotalHeight, nil
+func calculateCellContentSizeInternal(dc *gg.Context, cell *table.Cell, fontSize, lineHeightMultiplier, padding, availableWidthForTextAndPadding float64, allTables map[string]table.Table, layoutConsts LayoutConstants) (textBlockWidth float64, textBlockHeight float64, err error) {
+	if cell.IsTableRef {
+		minContentWidth := math.Max(0, layoutConsts.MinCellWidth-(2*layoutConsts.Padding))
+		minContentHeight := math.Max(0, layoutConsts.MinCellHeight-(2*layoutConsts.Padding))
+
+		if cell.TableRefID == "" {
+			log.Printf("Warning: Cell '%s' (Title) is IsTableRef but TableRefID is empty. Using min content size.", cell.Title)
+			return minContentWidth, minContentHeight, nil
+		}
+		if allTables == nil {
+			log.Printf("Warning: allTables map is nil while processing table reference for cell '%s' (Title). Using min content size.", cell.Title)
+			return minContentWidth, minContentHeight, nil
+		}
+
+		refTable, ok := allTables[cell.TableRefID]
+		if !ok {
+			log.Printf("Warning: Referenced table ID '%s' not found for cell '%s' (Title). Using min content size.", cell.TableRefID, cell.Title)
+			return minContentWidth, minContentHeight, nil
+		}
+
+		// Basic self-reference check could be added here if parent table ID were available.
+		// For now, proceeding without it.
+
+		// Create and calculate layout for the inner table.
+		// Note: Using the same layout constants for the inner table.
+		// A different set of constants (e.g., smaller font) could be passed if desired.
+		innerLayoutGrid, mapErr := PopulateOccupationMap(&refTable)
+		if mapErr != nil {
+			return 0, 0, fmt.Errorf("error populating occupation map for inner table '%s' (cell '%s'): %w", refTable.ID, cell.Title, mapErr)
+		}
+
+		if innerLayoutGrid.NumLogicalRows == 0 || innerLayoutGrid.NumLogicalCols == 0 {
+			log.Printf("Info: Inner table '%s' for cell '%s' (Title) is empty. Using zero content size.", refTable.ID, cell.Title)
+			return 0, 0, nil // Represents empty content
+		}
+
+		calcErr := innerLayoutGrid.CalculateColumnWidthsAndRowHeights(layoutConsts, allTables) // Recursive call
+		if calcErr != nil {
+			return 0, 0, fmt.Errorf("error calculating layout for inner table '%s' (cell '%s'): %w", refTable.ID, cell.Title, calcErr)
+		}
+
+		// Use 0 margin for inner table calculation, as parent cell's padding handles spacing.
+		innerLayoutGrid.CalculateFinalCellLayouts(0)
+
+		calculatedWidth := innerLayoutGrid.CanvasWidth
+		calculatedHeight := innerLayoutGrid.CanvasHeight
+		log.Printf("Info: Calculated inner table '%s' for cell '%s' (Title): width=%.2f, height=%.2f", refTable.ID, cell.Title, calculatedWidth, calculatedHeight)
+		return calculatedWidth, calculatedHeight, nil
+
+	} else {
+		// Original text measurement logic for non-reference cells
+		currentTotalHeight, actualMaxWidthUsed, lineHeight := 0.0, 0.0, fontSize*lineHeightMultiplier
+		textAvailableWidth := availableWidthForTextAndPadding - (2 * padding)
+		if textAvailableWidth < 0 {
+			textAvailableWidth = 0.0
+		}
+
+		if cell.Title != "" {
+			titleText := "[" + cell.Title + "]"
+			titleLines := dc.WordWrap(titleText, textAvailableWidth)
+			if len(titleLines) == 0 && titleText != "" {
+				// Handle case where WordWrap returns empty for non-empty string (e.g. very narrow width)
+				titleLines = []string{""} // Count as one line
+			}
+			for _, line := range titleLines {
+				w, _ := dc.MeasureString(line)
+				if w > actualMaxWidthUsed {
+					actualMaxWidthUsed = w
+				}
+			}
+			currentTotalHeight += float64(len(titleLines)) * lineHeight
+		}
+
+		if cell.Content != "" {
+			if cell.Title != "" && currentTotalHeight > 0 {
+				currentTotalHeight += lineHeight * 0.25 // Space between title and content
+			}
+			contentLines := dc.WordWrap(cell.Content, textAvailableWidth)
+			if len(contentLines) == 0 && cell.Content != "" {
+				contentLines = []string{""} // Count as one line
+			}
+			for _, line := range contentLines {
+				w, _ := dc.MeasureString(line)
+				if w > actualMaxWidthUsed {
+					actualMaxWidthUsed = w
+				}
+			}
+			currentTotalHeight += float64(len(contentLines)) * lineHeight
+		}
+		return actualMaxWidthUsed, currentTotalHeight, nil
+	}
 }
 func (lg *LayoutGrid) CalculateFinalCellLayouts(margin float64) {
 	lg.GridCells = make([]GridCellInfo, 0) ; if lg.NumLogicalCols == 0 || lg.NumLogicalRows == 0 { lg.CanvasWidth = margin * 2; if lg.CanvasWidth < 1 { lg.CanvasWidth = 1 }; lg.CanvasHeight = margin * 2; if lg.CanvasHeight < 1 { lg.CanvasHeight = 1 }; return }

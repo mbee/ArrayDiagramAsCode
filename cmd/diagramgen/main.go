@@ -16,25 +16,34 @@ func main() {
 	}
 
 	// Parse the content
-	tableData, err := parser.Parse(string(content))
+	allTablesData, err := parser.ParseAllText(string(content))
 	if err != nil {
-		log.Fatalf("Error parsing table: %v", err)
+		log.Fatalf("Error parsing input: %v", err)
 	}
 
-	// Render the table to PNG
+	if allTablesData.MainTableID == "" {
+		log.Fatalf("No main table ID found after parsing. Cannot determine which table to render.")
+	}
+	if len(allTablesData.Tables) == 0 {
+		log.Fatalf("No tables parsed from input.")
+	}
+
+	mainTable, ok := allTablesData.Tables[allTablesData.MainTableID]
+	if !ok {
+		log.Fatalf("Main table with ID '%s' not found in parsed tables.", allTablesData.MainTableID)
+	}
+
+	// Render the main table to PNG
 	outputFilePath := "output.png"
-	err = renderer.RenderToPNG(&tableData, outputFilePath) // Pass address of tableData
+	err = renderer.RenderToPNG(&mainTable, allTablesData.Tables, outputFilePath) // Pass address of mainTable and all parsed tables
 	if err != nil {
-		// Log the error but don't necessarily make it fatal if text rendering can still proceed.
-		// However, for this task, if PNG rendering fails, it's a primary concern.
-		log.Fatalf("Error rendering table to PNG: %v", err)
+		log.Fatalf("Error rendering main table to PNG: %v", err)
 	}
 
-	fmt.Printf("Table successfully rendered to %s\n", outputFilePath)
+	fmt.Printf("Main table ('%s') successfully rendered to %s\n", allTablesData.MainTableID, outputFilePath)
 
 	// Optional: Still render text version for comparison/debugging
-	// This helps verify parsing independently of PNG rendering issues (e.g. font missing)
-	fmt.Println("\nTextual representation for debugging:")
-	textOutput := renderer.Render(tableData) // Text renderer from the same package
+	fmt.Println("\nTextual representation for debugging (main table):")
+	textOutput := renderer.Render(mainTable) // Render takes table.Table by value
 	fmt.Println(textOutput)
 }
