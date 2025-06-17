@@ -166,20 +166,20 @@ func drawTableItself(dc *gg.Context, tableToDraw *table.Table, lg *LayoutGrid, a
 		dc.Stroke()
 
 		log.Printf("CELL [%d,%d]: Pre-Push/Clip.", gridCell.GridR, gridCell.GridC)
-		dc.Push()
-		defer dc.Pop()
-		log.Printf("CELL [%d,%d]: Post-Push, defer dc.Pop() active.", gridCell.GridR, gridCell.GridC)
+		// dc.Push()
+		// defer dc.Pop() // Pop is also commented out at the end of the loop for this debug
+		log.Printf("CELL [%d,%d]: Post-Push, defer dc.Pop() active. (NOTE: dc.Push/Pop/Clip TEMPORARILY DISABLED FOR DEBUGGING)", gridCell.GridR, gridCell.GridC)
 
-		contentAreaX := gridCell.X + lConsts.Padding
-		contentAreaY := gridCell.Y + lConsts.Padding
-		contentAreaWidth := gridCell.Width - (2 * lConsts.Padding)
-		contentAreaHeight := gridCell.Height - (2 * lConsts.Padding)
+		contentAreaX := gridCell.X + lConsts.Padding // Still needed for positioning content
+		contentAreaY := gridCell.Y + lConsts.Padding // Still needed for positioning content
+		contentAreaWidth := gridCell.Width - (2 * lConsts.Padding) // Still useful for alignment logic
+		contentAreaHeight := gridCell.Height - (2 * lConsts.Padding) // Still useful for alignment logic
 		if contentAreaWidth < 0 { contentAreaWidth = 0 }
 		if contentAreaHeight < 0 { contentAreaHeight = 0 }
 
-		log.Printf("CELL [%d,%d]: Applying Clip: X:%.1f, Y:%.1f, W:%.1f, H:%.1f", gridCell.GridR, gridCell.GridC, contentAreaX, contentAreaY, contentAreaWidth, contentAreaHeight)
-		dc.DrawRectangle(contentAreaX, contentAreaY, contentAreaWidth, contentAreaHeight)
-		dc.Clip()
+		// log.Printf("CELL [%d,%d]: Applying Clip: X:%.1f, Y:%.1f, W:%.1f, H:%.1f", gridCell.GridR, gridCell.GridC, contentAreaX, contentAreaY, contentAreaWidth, contentAreaHeight)
+		// dc.DrawRectangle(contentAreaX, contentAreaY, contentAreaWidth, contentAreaHeight)
+		// dc.Clip()
 
 		if cell.IsTableRef {
 			log.Printf("CELL [%d,%d]: IsTableRef TRUE. RefID: '%s'", gridCell.GridR, gridCell.GridC, cell.TableRefID)
@@ -315,6 +315,6 @@ func drawTableItself(dc *gg.Context, tableToDraw *table.Table, lg *LayoutGrid, a
 				}
 			}
 		}
-	}
+	} // Explicit dc.Pop() was already removed, defer is now commented.
 	return nil
 }
