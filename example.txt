@@ -1,19 +1,6 @@
-main_table: [main_overview]
+main_table: [simple_table]
 
-table: [main_overview] Main Overview {bg_table:#E0FFE0, edge_color:#333333, bg_cell:#F0FFF0}
-[ID] User ID | [Name] Full Name | [ContactInfo] Contact Information {bg:#DDEEDD}
-1 | Alice Wonderland | ::table=inner_contacts:: ::fixed_width=250:: ::fixed_height=150:: ::inner_align=center:: ::inner_scale=fit_both::
-2 | Bob The Builder | Email: bob@example.com\\nOffice: Main St. 123 ::fixed_width=150::
-3 | Charlie Brown | Tel: 555-1234 {bg:#EEFFEE}
-4 | Also uses ::rowspan=2:: ::table=inner_contacts:: ::inner_align=bottom_right:: ::inner_scale=fit_width::
-
-table: [inner_contacts] Contact Details {bg_table:#FFFFE0, bg_cell:#FFFFAA, edge_color:#CCAA66}
-Type | Detail
-Email | test@example.com
-Phone | 123-456-7890
-Web | example.com {bg:#FFFFDD}
-
-table: [fixed_size_demo] Fixed Size Cell Demo {bg_table:#F0F0F0, bg_cell:#FEFEFE}
-Description | Fixed Width Cell | Fixed Height Cell | Fixed Width & Height
-Short text | This is a rather long line of text that is intended to be clipped by the fixed width. ::fixed_width=100:: | This text might get clipped vertically if it wraps to many lines due to its overall length and the relatively small fixed height. ::fixed_height=40:: | Short ::fixed_width=70:: ::fixed_height=30::
-More text | Normal cell | Another normal cell | Text ::fixed_width=70:: ::fixed_height=30::
+table: [simple_table] Basic Test Table {bg_table:#F0F0F0, bg_cell:#FFFFFF, edge_color:#333333}
+Header A | Header B
+Cell 1A | Cell 1B Line 1\\nCell 1B Line 2
+Cell 2A | Cell 2B

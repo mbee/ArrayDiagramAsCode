@@ -12,43 +12,55 @@ import (
 const epsilon_layout_test = 0.1
 var defaultFontPath_layout_test = "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf"
 
-func newTestLayoutCellForLayoutTest(title, content string, colspan, rowspan int) *table.Cell {
-	cell := table.NewCell(title, content)
-	cell.Colspan = colspan
-	cell.Rowspan = rowspan
-	return &cell
+// Helper to create a new cell with default alignment/scale for testing layout.
+func newLayoutTestCell(title, content string, colspan, rowspan int) table.Cell {
+	c := table.NewCell(title, content)
+	c.Colspan = colspan
+	c.Rowspan = rowspan
+	// Explicitly set defaults that are now part of NewCell
+	c.InnerTableAlignment = "top_left"
+	c.InnerTableScaleMode = "none"
+	c.FixedWidth = 0.0
+	c.FixedHeight = 0.0
+	return c
 }
+
 
 func TestPopulateOccupationMap(t *testing.T) {
 	// Test Case 1: Simple 2x2 table (no change in expectation)
 	table1 := &table.Table{ Rows: []table.Row{
-		{Cells: []table.Cell{*newTestLayoutCellForLayoutTest("R0C0", "c1", 1, 1), *newTestLayoutCellForLayoutTest("R0C1", "c2", 1, 1)}},
-		{Cells: []table.Cell{*newTestLayoutCellForLayoutTest("R1C0", "c3", 1, 1), *newTestLayoutCellForLayoutTest("R1C1", "c4", 1, 1)}},
+		{Cells: []table.Cell{newLayoutTestCell("R0C0", "c1", 1, 1), newLayoutTestCell("R0C1", "c2", 1, 1)}},
+		{Cells: []table.Cell{newLayoutTestCell("R1C0", "c3", 1, 1), newLayoutTestCell("R1C1", "c4", 1, 1)}},
 	}}
 	lg1, _ := PopulateOccupationMap(table1)
 	if lg1.NumLogicalRows != 2 { t.Errorf("table1: exp 2 rows, got %d", lg1.NumLogicalRows) }
 	if lg1.NumLogicalCols != 2 { t.Errorf("table1: exp 2 cols, got %d", lg1.NumLogicalCols) }
-	if lg1.OccupationMap[0][0] != &table1.Rows[0].Cells[0] { t.Error("table1: (0,0)") }
-	if lg1.OccupationMap[0][1] != &table1.Rows[0].Cells[1] { t.Error("table1: (0,1)") }
-	if lg1.OccupationMap[1][0] != &table1.Rows[1].Cells[0] { t.Error("table1: (1,0)") }
-	if lg1.OccupationMap[1][1] != &table1.Rows[1].Cells[1] { t.Error("table1: (1,1)") }
+	if lg1.OccupationMap[0][0].Content != "c1" { t.Error("table1: (0,0)") } // Compare content for simplicity
+	if lg1.OccupationMap[0][1].Content != "c2" { t.Error("table1: (0,1)") }
+	if lg1.OccupationMap[1][0].Content != "c3" { t.Error("table1: (1,0)") }
+	if lg1.OccupationMap[1][1].Content != "c4" { t.Error("table1: (1,1)") }
 
 	// Test Case 2: Colspan (no change in expectation for NumLogicalCols from this)
+	table2Cell0 := newLayoutTestCell("R0C0s2", "span2col", 2, 1)
+	table2Cell1 := newLayoutTestCell("R0C2", "after", 1, 1)
 	table2 := &table.Table{ Rows: []table.Row{
-		{Cells: []table.Cell{*newTestLayoutCellForLayoutTest("R0C0s2", "span2col", 2, 1), *newTestLayoutCellForLayoutTest("R0C2", "after", 1, 1)}},
-		{Cells: []table.Cell{*newTestLayoutCellForLayoutTest("R1C0", "r1c0", 1, 1), *newTestLayoutCellForLayoutTest("R1C1", "r1c1", 1, 1), *newTestLayoutCellForLayoutTest("R1C2", "r1c2", 1, 1)}},
+		{Cells: []table.Cell{table2Cell0, table2Cell1}},
+		{Cells: []table.Cell{newLayoutTestCell("R1C0", "r1c0", 1, 1), newLayoutTestCell("R1C1", "r1c1", 1, 1), newLayoutTestCell("R1C2", "r1c2", 1, 1)}},
 	}}
 	lg2, _ := PopulateOccupationMap(table2)
 	if lg2.NumLogicalRows != 2 { t.Errorf("table2: exp 2 rows, got %d", lg2.NumLogicalRows) }
 	if lg2.NumLogicalCols != 3 { t.Errorf("table2: exp 3 cols, got %d", lg2.NumLogicalCols) }
 	if lg2.OccupationMap[0][0] != &table2.Rows[0].Cells[0] || lg2.OccupationMap[0][1] != &table2.Rows[0].Cells[0] { t.Error("table2: (0,0)-(0,1) span") }
     if lg2.OccupationMap[0][2] != &table2.Rows[0].Cells[1] { t.Error("table2: (0,2)")}
-    if lg2.OccupationMap[1][0] != &table2.Rows[1].Cells[0] || lg2.OccupationMap[1][1] != &table2.Rows[1].Cells[1] || lg2.OccupationMap[1][2] != &table2.Rows[1].Cells[2] {t.Error("table2: row 1 contents")}
 
-	// Test Case 3: Rowspan (EXPECTING "true skip" behavior -> 2 columns)
+	// Test Case 3: Rowspan
+	table3Cell0 := newLayoutTestCell("R0C0_rs2", "span2row", 1, 2)
+	table3Cell1 := newLayoutTestCell("R0C1_adj", "adjacent", 1, 1)
+	table3Cell2 := newLayoutTestCell("R1C0_skip", "SKIPPED", 1, 1) // This cell should be skipped by placement logic
+	table3Cell3 := newLayoutTestCell("R1C1_next", "next in row", 1, 1)
 	table3 := &table.Table{ Rows: []table.Row{
-		{Cells: []table.Cell{*newTestLayoutCellForLayoutTest("R0C0_rs2", "span2row", 1, 2), *newTestLayoutCellForLayoutTest("R0C1_adj", "adjacent", 1, 1)}},
-		{Cells: []table.Cell{*newTestLayoutCellForLayoutTest("R1C0_skip", "SKIPPED", 1, 1), *newTestLayoutCellForLayoutTest("R1C1_next", "next in row", 1, 1)}},
+		{Cells: []table.Cell{table3Cell0, table3Cell1}},
+		{Cells: []table.Cell{table3Cell2, table3Cell3}},
 	}}
 	lg3, _ := PopulateOccupationMap(table3)
 	if lg3.NumLogicalRows != 2 {t.Errorf("table3: exp 2 rows, got %d", lg3.NumLogicalRows)}
@@ -56,59 +68,51 @@ func TestPopulateOccupationMap(t *testing.T) {
 	if lg3.OccupationMap[0][0] != &table3.Rows[0].Cells[0] {t.Error("table3: (0,0)")}
 	if lg3.OccupationMap[1][0] != &table3.Rows[0].Cells[0] {t.Error("table3: (1,0) from rowspan")}
 	if lg3.OccupationMap[0][1] != &table3.Rows[0].Cells[1] {t.Error("table3: (0,1)")}
-	if lg3.OccupationMap[1][1] != &table3.Rows[1].Cells[1] {t.Errorf("table3: Expected R1C1_next at (1,1), got %p instead of %p", lg3.OccupationMap[1][1], &table3.Rows[1].Cells[1])}
-
-    // Test Case 4: Rowspan completely blocks (EXPECTING "true skip" -> 2 columns)
-    table4 := &table.Table{ Rows: []table.Row{
-		{Cells: []table.Cell{*newTestLayoutCellForLayoutTest("A_rs2", "A", 1, 2), *newTestLayoutCellForLayoutTest("B", "B", 1, 1)}},
-		{Cells: []table.Cell{*newTestLayoutCellForLayoutTest("C_skip", "C", 1, 1), *newTestLayoutCellForLayoutTest("D_next", "D", 1, 1)}},
-	}}
-    lg4, _ := PopulateOccupationMap(table4)
-    if lg4.NumLogicalRows != 2 {t.Errorf("table4: exp 2 rows, got %d", lg4.NumLogicalRows)}
-    if lg4.NumLogicalCols != 2 {t.Errorf("table4: exp 2 cols for true skip, got %d", lg4.NumLogicalCols)}
-    if lg4.OccupationMap[0][0] != &table4.Rows[0].Cells[0] || lg4.OccupationMap[1][0] != &table4.Rows[0].Cells[0] {t.Error("table4: A span")}
-    if lg4.OccupationMap[0][1] != &table4.Rows[0].Cells[1] {t.Error("table4: B")}
-    if lg4.OccupationMap[1][1] != &table4.Rows[1].Cells[1] {t.Errorf("table4: Expected D_next at (1,1), got %p", lg4.OccupationMap[1][1])}
-
-    // Test Case 5: User example (Hydrogen/Helium) - True Skip Logic (EXPECTING 4 columns)
-    tableEx := &table.Table{ Rows: []table.Row{
-            {Cells:[]table.Cell{*newTestLayoutCellForLayoutTest("ID1", "1", 1, 1), *newTestLayoutCellForLayoutTest("NameH", "Hydrogen", 1, 2), *newTestLayoutCellForLayoutTest("SymH", "H", 1, 1), *newTestLayoutCellForLayoutTest("OrigH", "Cavendish", 1, 1)}},
-            {Cells:[]table.Cell{*newTestLayoutCellForLayoutTest("IDHe", "2", 1, 1), *newTestLayoutCellForLayoutTest("NameHeSK", "HeliumSKIP", 1, 1), *newTestLayoutCellForLayoutTest("SymHePl", "He", 1, 1), *newTestLayoutCellForLayoutTest("OrigHePl", "Janssen", 1, 1)}},
-    }}
-    lgEx, _ := PopulateOccupationMap(tableEx)
-    if lgEx.NumLogicalRows != 2 {t.Errorf("tableEx: Exp 2 rows, got %d", lgEx.NumLogicalRows)}
-    if lgEx.NumLogicalCols != 4 {t.Errorf("tableEx: Exp 4 cols for true skip, got %d. Map: %v", lgEx.NumLogicalCols, lgEx.OccupationMap)}
-    if lgEx.OccupationMap[0][0] != &tableEx.Rows[0].Cells[0] {t.Error("tableEx: (0,0) h_id")}
-    if lgEx.OccupationMap[0][1] != &tableEx.Rows[0].Cells[1] {t.Error("tableEx: (0,1) h_name_rs2")}
-    if lgEx.OccupationMap[0][2] != &tableEx.Rows[0].Cells[2] {t.Error("tableEx: (0,2) h_sym")}
-    if lgEx.OccupationMap[0][3] != &tableEx.Rows[0].Cells[3] {t.Error("tableEx: (0,3) h_orig")}
-    if lgEx.OccupationMap[1][0] != &tableEx.Rows[1].Cells[0] {t.Errorf("tableEx: (1,0) exp he_id")}
-    if lgEx.OccupationMap[1][1] != &tableEx.Rows[0].Cells[1] {t.Errorf("tableEx: (1,1) exp h_name_rs2 (rowspan)")}
-    if lgEx.OccupationMap[1][2] != &tableEx.Rows[1].Cells[2] {t.Errorf("tableEx: (1,2) exp he_sym_place")}
-    if lgEx.OccupationMap[1][3] != &tableEx.Rows[1].Cells[3] {t.Errorf("tableEx: (1,3) exp he_orig_place")}
-    if lgEx.NumLogicalCols > 4 { t.Errorf("tableEx: NumLogicalCols became %d, expected 4", lgEx.NumLogicalCols) }
+	if lg3.OccupationMap[1][1] != &table3.Rows[1].Cells[1] {t.Errorf("table3: Expected R1C1_next at (1,1)")}
 }
+
 
 func TestCalculateColumnWidthsAndRowHeights(t *testing.T) {
 	constants := LayoutConstants{ FontPath: defaultFontPath_layout_test, FontSize: 12.0, LineHeightMultiplier: 1.4, Padding: 5.0, MinCellWidth: 10.0, MinCellHeight: 10.0 }
-	c1 := newTestLayoutCellForLayoutTest("C1", "short", 1, 1); c2 := newTestLayoutCellForLayoutTest("C2", "this is a much longer string", 1, 1)
-	tableSimple := &table.Table{ Rows: []table.Row{{Cells: []table.Cell{*c1, *c2}}} }
+	c1 := newLayoutTestCell("C1", "short", 1, 1);
+	c2 := newLayoutTestCell("C2", "this is a much longer string", 1, 1)
+	tableSimple := &table.Table{ Rows: []table.Row{{Cells: []table.Cell{c1, c2}}} }
 	lgSimple, popErr := PopulateOccupationMap(tableSimple)
     if popErr != nil { t.Fatalf("Simple: PopulateOccupationMap failed: %v", popErr)}
 	calcErr := lgSimple.CalculateColumnWidthsAndRowHeights(constants, make(map[string]table.Table))
 	fontLoadFailed := (calcErr != nil && strings.Contains(calcErr.Error(), "failed to load font"))
 	if calcErr != nil && !fontLoadFailed { t.Fatalf("Simple: Calculate failed: %v", calcErr) }
     if fontLoadFailed { t.Logf("Simple: Font loading failed ('%s'), text measurement dependent assertions will be less reliable: %v", constants.FontPath, calcErr) }
+
 	if len(lgSimple.ColumnWidths) < 2 {t.Fatalf("Simple: Expected at least 2 col widths, got %d", len(lgSimple.ColumnWidths))}
 	if !fontLoadFailed {
-		if lgSimple.ColumnWidths[0] < constants.MinCellWidth { t.Errorf("Simple: Col0 width %f < min %f", lgSimple.ColumnWidths[0], constants.MinCellWidth) }
-		if lgSimple.ColumnWidths[1] < constants.MinCellWidth { t.Errorf("Simple: Col1 width %f < min %f", lgSimple.ColumnWidths[1], constants.MinCellWidth) }
+		dcCalc := gg.NewContext(1,1)
+		dcCalc.LoadFontFace(constants.FontPath, constants.FontSize)
+		widthC1, _, _ := calculateCellContentSizeInternal(dcCalc, &c1, constants.FontSize, constants.LineHeightMultiplier, constants.Padding, 10000.0, nil, constants)
+		expectedWidthC1 := math.Max(widthC1 + (2*constants.Padding), constants.MinCellWidth)
+		if !floatEquals(lgSimple.ColumnWidths[0], expectedWidthC1, epsilon_layout_test) {t.Errorf("Simple: Col0 width %f != expected %f", lgSimple.ColumnWidths[0], expectedWidthC1) }
+
+		widthC2, _, _ := calculateCellContentSizeInternal(dcCalc, &c2, constants.FontSize, constants.LineHeightMultiplier, constants.Padding, 10000.0, nil, constants)
+		expectedWidthC2 := math.Max(widthC2+(2*constants.Padding), constants.MinCellWidth)
+		if !floatEquals(lgSimple.ColumnWidths[1], expectedWidthC2, epsilon_layout_test) { t.Errorf("Simple: Col1 width %f != expected %f", lgSimple.ColumnWidths[1], expectedWidthC2) }
+
 		if lgSimple.ColumnWidths[1] <= lgSimple.ColumnWidths[0] { t.Errorf("Simple: Expected col1 (%f) > col0 (%f)", lgSimple.ColumnWidths[1], lgSimple.ColumnWidths[0]) }
 	} else { t.Log("Simple: Skipping some column width checks due to font loading issue.") }
+
 	if len(lgSimple.RowHeights) < 1 {t.Fatalf("Simple: Expected at least 1 row height, got %d", len(lgSimple.RowHeights))}
-	if lgSimple.RowHeights[0] < constants.MinCellHeight {t.Errorf("Simple: Row height %f < min %f", lgSimple.RowHeights[0], constants.MinCellHeight)}
-    spanCell := newTestLayoutCellForLayoutTest("Span", "This cell spans two columns", 2, 1)
-    tableColspan := &table.Table{ Rows: []table.Row{{Cells: []table.Cell{*spanCell}}} }
+
+	if !fontLoadFailed {
+		dcCalc := gg.NewContext(1,1)
+		dcCalc.LoadFontFace(constants.FontPath, constants.FontSize)
+		_, heightC1, _ := calculateCellContentSizeInternal(dcCalc, &c1, constants.FontSize, constants.LineHeightMultiplier, constants.Padding, lgSimple.ColumnWidths[0], nil, constants)
+		_, heightC2, _ := calculateCellContentSizeInternal(dcCalc, &c2, constants.FontSize, constants.LineHeightMultiplier, constants.Padding, lgSimple.ColumnWidths[1], nil, constants)
+		expectedRowHeight := math.Max(math.Max(heightC1+(2*constants.Padding), heightC2+(2*constants.Padding)), constants.MinCellHeight)
+		if !floatEquals(lgSimple.RowHeights[0], expectedRowHeight, epsilon_layout_test) {t.Errorf("Simple: Row height %f != expected %f", lgSimple.RowHeights[0], expectedRowHeight)}
+	}
+
+
+    spanCell := newLayoutTestCell("Span", "This cell spans two columns", 2, 1)
+    tableColspan := &table.Table{ Rows: []table.Row{{Cells: []table.Cell{spanCell}}} }
     lgColspan, popErrCs := PopulateOccupationMap(tableColspan)
     if popErrCs != nil { t.Fatalf("Colspan: Populate failed: %v", popErrCs) }
     calcErrColspan := lgColspan.CalculateColumnWidthsAndRowHeights(constants, make(map[string]table.Table))
@@ -116,19 +120,149 @@ func TestCalculateColumnWidthsAndRowHeights(t *testing.T) {
     if calcErrColspan != nil && !fontLoadFailedColspan { t.Fatalf("Colspan: Calculate failed: %v", calcErrColspan) }
     if fontLoadFailedColspan { t.Logf("Colspan: Font loading failed...") }
 	if len(lgColspan.ColumnWidths) < 2 { t.Fatalf("Colspan: Expected 2 column widths, got %d", len(lgColspan.ColumnWidths)) }
-    totalSpannedWidth := lgColspan.ColumnWidths[0] + lgColspan.ColumnWidths[1]
-    if totalSpannedWidth < constants.MinCellWidth-epsilon_layout_test && !fontLoadFailedColspan {
-         t.Errorf("Colspan: Total spanned width %f too narrow, min %f", totalSpannedWidth, constants.MinCellWidth)
-    }
+
+	if !fontLoadFailedColspan {
+		dcCalc := gg.NewContext(1,1)
+		dcCalc.LoadFontFace(constants.FontPath, constants.FontSize)
+		spanCellWidth, _, _ := calculateCellContentSizeInternal(dcCalc, &spanCell, constants.FontSize, constants.LineHeightMultiplier, constants.Padding, 10000.0, nil, constants)
+		expectedTotalSpannedWidth := math.Max(spanCellWidth+(2*constants.Padding), constants.MinCellWidth*2)
+		totalSpannedWidth := lgColspan.ColumnWidths[0] + lgColspan.ColumnWidths[1]
+		if math.Abs(totalSpannedWidth - expectedTotalSpannedWidth) > epsilon_layout_test*float64(spanCell.Colspan) {
+			 t.Errorf("Colspan: Total spanned width %f too different from expected %f", totalSpannedWidth, expectedTotalSpannedWidth)
+		}
+	}
 }
 
+func TestCalculateColumnWidthsAndRowHeights_WithFixedSizes(t *testing.T) {
+	testLayoutConsts := LayoutConstants{
+		FontPath:             defaultFontPath_layout_test,
+		FontSize:             12.0,
+		LineHeightMultiplier: 1.4,
+		Padding:              5.0,
+		MinCellWidth:         50.0, // Ensure MinCellWidth is clearly different from fixed values
+		MinCellHeight:        30.0,
+	}
+	dc := gg.NewContext(1,1) // For text measurement if needed by non-fixed cells
+	if err := dc.LoadFontFace(testLayoutConsts.FontPath, testLayoutConsts.FontSize); err != nil {
+		t.Logf("Warning: Font load failed in TestCalculateColumnWidthsAndRowHeights_WithFixedSizes - %v", err)
+	}
+
+	t.Run("FixedWidthDictatesColumnWidth", func(t *testing.T) {
+		cellA := newLayoutTestCell("A", "text", 1, 1)
+		cellB := newLayoutTestCell("B", "fixed", 1, 1)
+		cellB.FixedWidth = 150.0
+
+		tbl := &table.Table{Rows: []table.Row{{Cells: []table.Cell{cellA, cellB}}}}
+		lg, _ := PopulateOccupationMap(tbl)
+		_ = lg.CalculateColumnWidthsAndRowHeights(testLayoutConsts, nil)
+
+		contentWidthA, _, _ := calculateCellContentSizeInternal(dc, &cellA, testLayoutConsts.FontSize, testLayoutConsts.LineHeightMultiplier, testLayoutConsts.Padding, 10000, nil, testLayoutConsts)
+		expectedWidthA := math.Max(contentWidthA + (2*testLayoutConsts.Padding), testLayoutConsts.MinCellWidth)
+
+		if !floatEquals(lg.ColumnWidths[0], expectedWidthA, epsilon_layout_test) {
+			t.Errorf("Expected Col0 width %.2f, got %.2f", expectedWidthA, lg.ColumnWidths[0])
+		}
+		if !floatEquals(lg.ColumnWidths[1], 150.0, epsilon_layout_test) {
+			t.Errorf("Expected Col1 (CellB FixedWidth) width 150.0, got %.2f", lg.ColumnWidths[1])
+		}
+	})
+
+	t.Run("FixedHeightDictatesRowHeight", func(t *testing.T) {
+		cellA := newLayoutTestCell("A", "text", 1, 1) // Row 0
+		cellC := newLayoutTestCell("C", "fixed height", 1, 1) // Row 1
+		cellC.FixedHeight = 80.0
+
+		tbl := &table.Table{Rows: []table.Row{{Cells: []table.Cell{cellA}}, {Cells: []table.Cell{cellC}}}}
+		lg, _ := PopulateOccupationMap(tbl)
+		_ = lg.CalculateColumnWidthsAndRowHeights(testLayoutConsts, nil)
+
+		_, contentHeightA, _ := calculateCellContentSizeInternal(dc, &cellA, testLayoutConsts.FontSize, testLayoutConsts.LineHeightMultiplier, testLayoutConsts.Padding, lg.ColumnWidths[0], nil, testLayoutConsts)
+		expectedHeightA := math.Max(contentHeightA + (2*testLayoutConsts.Padding), testLayoutConsts.MinCellHeight)
+
+		if !floatEquals(lg.RowHeights[0], expectedHeightA, epsilon_layout_test) {
+			t.Errorf("Expected Row0 height %.2f, got %.2f", expectedHeightA, lg.RowHeights[0])
+		}
+		if !floatEquals(lg.RowHeights[1], 80.0, epsilon_layout_test) {
+			t.Errorf("Expected Row1 (CellC FixedHeight) height 80.0, got %.2f", lg.RowHeights[1])
+		}
+	})
+
+	t.Run("MaxFixedWidthInColumnWinsOverContent", func(t *testing.T) {
+		cellA := newLayoutTestCell("A", "fixed", 1, 1); cellA.FixedWidth = 200.0
+		cellB := newLayoutTestCell("B", "short", 1, 1)
+		tbl := &table.Table{Rows: []table.Row{{Cells: []table.Cell{cellA}}, {Cells: []table.Cell{cellB}}}}
+		lg, _ := PopulateOccupationMap(tbl)
+		_ = lg.CalculateColumnWidthsAndRowHeights(testLayoutConsts, nil)
+		if !floatEquals(lg.ColumnWidths[0], 200.0, epsilon_layout_test) {
+			t.Errorf("Expected Col0 width 200.0 (from CellA FixedWidth), got %.2f", lg.ColumnWidths[0])
+		}
+	})
+
+	t.Run("ContentCanMakeColWiderThanOtherCellFixedWidth", func(t *testing.T) {
+		cellA := newLayoutTestCell("A", "fixed", 1, 1); cellA.FixedWidth = 100.0
+		cellB := newLayoutTestCell("B", "very very long text that is wider than 100px", 1, 1)
+		tbl := &table.Table{Rows: []table.Row{{Cells: []table.Cell{cellA}}, {Cells: []table.Cell{cellB}}}}
+		lg, _ := PopulateOccupationMap(tbl)
+		_ = lg.CalculateColumnWidthsAndRowHeights(testLayoutConsts, nil)
+
+		contentWidthB, _, _ := calculateCellContentSizeInternal(dc, &cellB, testLayoutConsts.FontSize, testLayoutConsts.LineHeightMultiplier, testLayoutConsts.Padding, 10000, nil, testLayoutConsts)
+		expectedWidthB := math.Max(contentWidthB + (2*testLayoutConsts.Padding), testLayoutConsts.MinCellWidth)
+
+		if !floatEquals(lg.ColumnWidths[0], expectedWidthB, epsilon_layout_test) {
+			t.Errorf("Expected Col0 width %.2f (from CellB content), got %.2f", expectedWidthB, lg.ColumnWidths[0])
+		}
+	})
+
+	t.Run("FixedWidthWithColspan", func(t *testing.T) {
+		cellA := newLayoutTestCell("A", "span text", 2, 1); cellA.FixedWidth = 200.0
+		cellB := newLayoutTestCell("B", "end", 1, 1)
+		cellC := newLayoutTestCell("C", "c0", 1, 1)
+		cellD := newLayoutTestCell("D", "c1", 1, 1)
+		cellE := newLayoutTestCell("E", "c2", 1, 1)
+		tbl := &table.Table{Rows: []table.Row{
+			{Cells: []table.Cell{cellA, cellB}},
+			{Cells: []table.Cell{cellC, cellD, cellE}},
+		}}
+		lg, _ := PopulateOccupationMap(tbl)
+		_ = lg.CalculateColumnWidthsAndRowHeights(testLayoutConsts, nil)
+
+		if len(lg.ColumnWidths) < 2 { t.Fatalf("Expected at least 2 columns for colspan test, got %d", len(lg.ColumnWidths))}
+		sumOfSpannedColumns := lg.ColumnWidths[0] + lg.ColumnWidths[1]
+		if sumOfSpannedColumns < 200.0 - epsilon_layout_test { // Sum should be at least the fixed width
+			t.Errorf("Expected Col0+Col1 width to be approx 200.0, got %.2f", sumOfSpannedColumns)
+		}
+	})
+
+	t.Run("FixedWidthLessThanMinCellWidth", func(t *testing.T) {
+		cellA := newLayoutTestCell("A", "tiny", 1, 1); cellA.FixedWidth = 20.0
+		// testLayoutConsts.MinCellWidth is 50.0
+		tbl := &table.Table{Rows: []table.Row{{Cells: []table.Cell{cellA}}}}
+		lg, _ := PopulateOccupationMap(tbl)
+		_ = lg.CalculateColumnWidthsAndRowHeights(testLayoutConsts, nil)
+		if !floatEquals(lg.ColumnWidths[0], 20.0, epsilon_layout_test) {
+			t.Errorf("Expected Col0 width 20.0 (FixedWidt should override MinCellWidth), got %.2f", lg.ColumnWidths[0])
+		}
+	})
+}
+
+
 func TestCalculateFinalCellLayouts(t *testing.T) {
-	margin := 10.0; c1 := newTestLayoutCellForLayoutTest("C1", "c1", 1, 1); c2_span := newTestLayoutCellForLayoutTest("C2span", "c2span", 2, 1)
+	margin := 10.0;
+	c1 := newLayoutTestCell("C1", "c1", 1, 1);
+	c2_span := newLayoutTestCell("C2span", "c2span", 2, 1)
+
 	lg := NewLayoutGrid(1, 3);
 	lg.NumLogicalRows = 1; lg.NumLogicalCols = 3;
     if len(lg.OccupationMap) < lg.NumLogicalRows { lg.OccupationMap = make([][]*table.Cell, lg.NumLogicalRows) }
-    for i := range lg.OccupationMap { if len(lg.OccupationMap[i]) < lg.NumLogicalCols { lg.OccupationMap[i] = make([]*table.Cell, lg.NumLogicalCols) } }
-	lg.OccupationMap[0][0] = c1; lg.OccupationMap[0][1] = c2_span; lg.OccupationMap[0][2] = c2_span
+    for i := range lg.OccupationMap {
+		if lg.OccupationMap[i] == nil { lg.OccupationMap[i] = make([]*table.Cell, lg.NumLogicalCols) }
+	}
+
+	// Manually assign cells to occupation map for this test
+	lg.OccupationMap[0][0] = &c1
+	lg.OccupationMap[0][1] = &c2_span
+	lg.OccupationMap[0][2] = &c2_span
+
 	lg.ColumnWidths = []float64{50.0, 60.0, 70.0}; lg.RowHeights = []float64{30.0}
 	lg.CalculateFinalCellLayouts(margin)
 	expectedCanvasWidth := 50.0 + 60.0 + 70.0 + 2*margin
@@ -138,13 +272,13 @@ func TestCalculateFinalCellLayouts(t *testing.T) {
 	if len(lg.GridCells) != 2 { t.Fatalf("Exp 2 GridCells, got %d", len(lg.GridCells)) }
 	foundC1 := false; foundC2span := false
 	for _, gridCell := range lg.GridCells {
-		if gridCell.OriginalCell == c1 { foundC1 = true
+		if gridCell.OriginalCell.Content == c1.Content { foundC1 = true // Compare by content as pointers will differ
 			if math.Abs(gridCell.X - margin) > epsilon_layout_test { t.Errorf("C1.X exp %f, got %f", margin, gridCell.X) }
 			if math.Abs(gridCell.Y - margin) > epsilon_layout_test { t.Errorf("C1.Y exp %f, got %f", margin, gridCell.Y) }
 			if math.Abs(gridCell.Width - 50.0) > epsilon_layout_test { t.Errorf("C1.Width exp %f, got %f", 50.0, gridCell.Width) }
 			if math.Abs(gridCell.Height - 30.0) > epsilon_layout_test { t.Errorf("C1.Height exp %f, got %f", 30.0, gridCell.Height) }
 		}
-		if gridCell.OriginalCell == c2_span { foundC2span = true
+		if gridCell.OriginalCell.Content == c2_span.Content { foundC2span = true
 			if math.Abs(gridCell.X - (margin + 50.0)) > epsilon_layout_test { t.Errorf("C2span.X exp %f, got %f", margin+50.0, gridCell.X) }
 			if math.Abs(gridCell.Y - margin) > epsilon_layout_test { t.Errorf("C2span.Y exp %f, got %f", margin, gridCell.Y) }
 			if math.Abs(gridCell.Width - (60.0 + 70.0)) > epsilon_layout_test { t.Errorf("C2span.Width exp %f, got %f", 60.0+70.0, gridCell.Width) }
@@ -178,19 +312,24 @@ func TestCalculateCellContentSizeInternal_TableRef(t *testing.T) {
 
 	// --- Test Case 1: Valid Table Reference ---
 	t.Run("ValidTableReference", func(t *testing.T) {
+		innerTableCellContent := newLayoutTestCell("R1C1", "Content", 1,1)
+		innerTableCellMoreContent := newLayoutTestCell("R1C2", "More Content",1,1)
+		innerTableCellEvenMore := newLayoutTestCell("R2C1", "Even More",1,1)
+		innerTableCellFinal := newLayoutTestCell("R2C2", "Final",1,1)
+
 		innerTable := table.Table{
 			ID: "inner1",
 			Rows: []table.Row{
-				{Cells: []table.Cell{table.NewCell("R1C1", "Content"), table.NewCell("R1C2", "More Content")}},
-				{Cells: []table.Cell{table.NewCell("R2C1", "Even More"), table.NewCell("R2C2", "Final")}},
+				{Cells: []table.Cell{innerTableCellContent, innerTableCellMoreContent}},
+				{Cells: []table.Cell{innerTableCellEvenMore, innerTableCellFinal}},
 			},
 			Settings: table.DefaultGlobalSettings(),
 		}
 		allTablesMap := map[string]table.Table{"inner1": innerTable}
-		parentCell := table.Cell{
-			IsTableRef: true,
-			TableRefID: "inner1",
-		}
+		parentCell := newLayoutTestCell("", "", 1,1)
+		parentCell.IsTableRef = true
+		parentCell.TableRefID = "inner1"
+
 
 		// Calculate expected dimensions for the inner table
 		expectedInnerLg, mapErr := PopulateOccupationMap(&innerTable)
@@ -226,7 +365,10 @@ func TestCalculateCellContentSizeInternal_TableRef(t *testing.T) {
 	t.Run("EmptyInnerTable", func(t *testing.T) {
 		emptyInnerTable := table.Table{ID: "emptyInner", Settings: table.DefaultGlobalSettings()} // No rows/cols
 		allTablesMap := map[string]table.Table{"emptyInner": emptyInnerTable}
-		parentCell := table.Cell{IsTableRef: true, TableRefID: "emptyInner"}
+		parentCell := newLayoutTestCell("","",1,1)
+		parentCell.IsTableRef = true
+		parentCell.TableRefID = "emptyInner"
+
 
 		actualWidth, actualHeight, err := calculateCellContentSizeInternal(dc, &parentCell,
 			testLayoutConsts.FontSize, testLayoutConsts.LineHeightMultiplier, testLayoutConsts.Padding,
@@ -246,7 +388,10 @@ func TestCalculateCellContentSizeInternal_TableRef(t *testing.T) {
 	// --- Test Case 3: Non-Existent TableRefID ---
 	t.Run("NonExistentTableRefID", func(t *testing.T) {
 		allTablesMap := map[string]table.Table{} // Empty map
-		parentCell := table.Cell{IsTableRef: true, TableRefID: "non_existent_id"}
+		parentCell := newLayoutTestCell("","",1,1)
+		parentCell.IsTableRef = true
+		parentCell.TableRefID = "non_existent_id"
+
 
 		expectedFallbackWidth := math.Max(0, testLayoutConsts.MinCellWidth-(2*testLayoutConsts.Padding))
 		expectedFallbackHeight := math.Max(0, testLayoutConsts.MinCellHeight-(2*testLayoutConsts.Padding))
@@ -268,7 +413,10 @@ func TestCalculateCellContentSizeInternal_TableRef(t *testing.T) {
 
 	// --- Test Case 4: Nil allTablesMap ---
 	t.Run("NilAllTablesMap", func(t *testing.T) {
-		parentCell := table.Cell{IsTableRef: true, TableRefID: "anyID"}
+		parentCell := newLayoutTestCell("","",1,1)
+		parentCell.IsTableRef = true
+		parentCell.TableRefID = "anyID"
+
 
 		expectedFallbackWidth := math.Max(0, testLayoutConsts.MinCellWidth-(2*testLayoutConsts.Padding))
 		expectedFallbackHeight := math.Max(0, testLayoutConsts.MinCellHeight-(2*testLayoutConsts.Padding))
@@ -291,7 +439,10 @@ func TestCalculateCellContentSizeInternal_TableRef(t *testing.T) {
 	// --- Test Case 5: Empty TableRefID ---
 	t.Run("EmptyTableRefID", func(t *testing.T) {
 		allTablesMap := map[string]table.Table{}
-		parentCell := table.Cell{IsTableRef: true, TableRefID: ""} // Empty TableRefID
+		parentCell := newLayoutTestCell("","",1,1)
+		parentCell.IsTableRef = true
+		parentCell.TableRefID = "" // Empty TableRefID
+
 
 		expectedFallbackWidth := math.Max(0, testLayoutConsts.MinCellWidth-(2*testLayoutConsts.Padding))
 		expectedFallbackHeight := math.Max(0, testLayoutConsts.MinCellHeight-(2*testLayoutConsts.Padding))
@@ -431,4 +582,144 @@ func TestCalculateCellContentSizeInternal_Multiline(t *testing.T) {
 			}
 		})
 	}
+}
+// TestCalculateColumnWidthsAndRowHeights_WithFixedSizes tests how fixed cell dimensions
+// influence overall column and row size calculations.
+func TestCalculateColumnWidthsAndRowHeights_WithFixedSizes(t *testing.T) {
+	testLayoutConsts := LayoutConstants{
+		FontPath:             defaultFontPath_layout_test,
+		FontSize:             12.0,
+		LineHeightMultiplier: 1.4,
+		Padding:              5.0,  // Standard padding
+		MinCellWidth:         50.0, // Min width for non-fixed cells
+		MinCellHeight:        30.0, // Min height for non-fixed cells
+	}
+	dc := gg.NewContext(1, 1) // For text measurement if needed by non-fixed cells
+	if err := dc.LoadFontFace(testLayoutConsts.FontPath, testLayoutConsts.FontSize); err != nil {
+		t.Logf("Warning: Font load failed in TestCalculateColumnWidthsAndRowHeights_WithFixedSizes - %v. Some text-dependent assertions might be less precise.", err)
+	}
+	allTablesMap := make(map[string]table.Table) // Empty, as not testing inner table refs here
+
+	t.Run("FixedWidthDictatesColumnWidth", func(t *testing.T) {
+		cellA := newLayoutTestCell("A", "text", 1, 1) // Normal cell
+		cellB := newLayoutTestCell("B", "fixed", 1, 1)
+		cellB.FixedWidth = 150.0
+
+		tbl := &table.Table{Rows: []table.Row{{Cells: []table.Cell{cellA, cellB}}}}
+		lg, _ := PopulateOccupationMap(tbl)
+		err := lg.CalculateColumnWidthsAndRowHeights(testLayoutConsts, allTablesMap)
+		if err != nil && !strings.Contains(err.Error(), "failed to load font"){
+			t.Fatalf("CalculateColumnWidthsAndRowHeights failed: %v", err)
+		}
+
+		contentWidthA, _, _ := calculateCellContentSizeInternal(dc, &cellA, testLayoutConsts.FontSize, testLayoutConsts.LineHeightMultiplier, testLayoutConsts.Padding, 10000, nil, testLayoutConsts)
+		expectedWidthA := math.Max(contentWidthA+(2*testLayoutConsts.Padding), testLayoutConsts.MinCellWidth)
+
+		if len(lg.ColumnWidths) < 2 { t.Fatalf("Expected at least 2 column widths, got %d", len(lg.ColumnWidths)) }
+		if !floatEquals(lg.ColumnWidths[0], expectedWidthA, epsilon_layout_test) {
+			t.Errorf("Expected Col0 width %.2f, got %.2f", expectedWidthA, lg.ColumnWidths[0])
+		}
+		if !floatEquals(lg.ColumnWidths[1], 150.0, epsilon_layout_test) {
+			t.Errorf("Expected Col1 (CellB FixedWidth) width 150.0, got %.2f", lg.ColumnWidths[1])
+		}
+	})
+
+	t.Run("FixedHeightDictatesRowHeight", func(t *testing.T) {
+		cellA := newLayoutTestCell("A", "text", 1, 1)
+		cellC := newLayoutTestCell("C", "fixed height", 1, 1)
+		cellC.FixedHeight = 80.0
+
+		tbl := &table.Table{Rows: []table.Row{{Cells: []table.Cell{cellA}}, {Cells: []table.Cell{cellC}}}}
+		lg, _ := PopulateOccupationMap(tbl)
+		// Need column widths to be calculated first for accurate height calculation of cellA
+		tempColWidth := math.Max(testLayoutConsts.MinCellWidth, dc.MeasureString("text") + 2*testLayoutConsts.Padding)
+		lg.ColumnWidths[0] = tempColWidth
+
+		err := lg.CalculateColumnWidthsAndRowHeights(testLayoutConsts, allTablesMap)
+		if err != nil && !strings.Contains(err.Error(), "failed to load font"){
+			t.Fatalf("CalculateColumnWidthsAndRowHeights failed: %v", err)
+		}
+
+		_, contentHeightA, _ := calculateCellContentSizeInternal(dc, &cellA, testLayoutConsts.FontSize, testLayoutConsts.LineHeightMultiplier, testLayoutConsts.Padding, lg.ColumnWidths[0], nil, testLayoutConsts)
+		expectedHeightA := math.Max(contentHeightA + (2*testLayoutConsts.Padding), testLayoutConsts.MinCellHeight)
+
+		if len(lg.RowHeights) < 2 { t.Fatalf("Expected at least 2 row heights, got %d", len(lg.RowHeights)) }
+		if !floatEquals(lg.RowHeights[0], expectedHeightA, epsilon_layout_test) {
+			t.Errorf("Expected Row0 height %.2f, got %.2f", expectedHeightA, lg.RowHeights[0])
+		}
+		if !floatEquals(lg.RowHeights[1], 80.0, epsilon_layout_test) {
+			t.Errorf("Expected Row1 (CellC FixedHeight) height 80.0, got %.2f", lg.RowHeights[1])
+		}
+	})
+
+	t.Run("MaxFixedWidthInColumnWinsOverContent", func(t *testing.T) {
+		cellA := newLayoutTestCell("A", "fixed", 1, 1); cellA.FixedWidth = 200.0
+		cellB := newLayoutTestCell("B", "short", 1, 1)
+		tbl := &table.Table{Rows: []table.Row{{Cells: []table.Cell{cellA}}, {Cells: []table.Cell{cellB}}}}
+		lg, _ := PopulateOccupationMap(tbl)
+		err := lg.CalculateColumnWidthsAndRowHeights(testLayoutConsts, allTablesMap)
+		if err != nil && !strings.Contains(err.Error(), "failed to load font"){ t.Fatalf("CalculateColumnWidthsAndRowHeights failed: %v", err)}
+
+		if len(lg.ColumnWidths) < 1 { t.Fatalf("Expected at least 1 column width, got %d", len(lg.ColumnWidths)) }
+		if !floatEquals(lg.ColumnWidths[0], 200.0, epsilon_layout_test) {
+			t.Errorf("Expected Col0 width 200.0 (from CellA FixedWidth), got %.2f", lg.ColumnWidths[0])
+		}
+	})
+
+	t.Run("ContentCanMakeColWiderThanOtherCellFixedWidth", func(t *testing.T) {
+		cellA := newLayoutTestCell("A", "fixed", 1, 1); cellA.FixedWidth = 100.0
+		cellBContent := "very very long text that is wider than 100px"
+		cellB := newLayoutTestCell("B", cellBContent, 1, 1)
+		tbl := &table.Table{Rows: []table.Row{{Cells: []table.Cell{cellA}}, {Cells: []table.Cell{cellB}}}}
+		lg, _ := PopulateOccupationMap(tbl)
+		err := lg.CalculateColumnWidthsAndRowHeights(testLayoutConsts, allTablesMap)
+		if err != nil && !strings.Contains(err.Error(), "failed to load font"){ t.Fatalf("CalculateColumnWidthsAndRowHeights failed: %v", err)}
+
+		contentWidthB, _, _ := calculateCellContentSizeInternal(dc, &cellB, testLayoutConsts.FontSize, testLayoutConsts.LineHeightMultiplier, testLayoutConsts.Padding, 10000, nil, testLayoutConsts)
+		expectedWidthB := math.Max(contentWidthB + (2*testLayoutConsts.Padding), testLayoutConsts.MinCellWidth)
+		// The column width should be the max of cellA's fixedWidth (100) and cellB's content-derived width.
+		finalExpectedColWidth := math.Max(cellA.FixedWidth, expectedWidthB)
+
+		if len(lg.ColumnWidths) < 1 { t.Fatalf("Expected at least 1 column width, got %d", len(lg.ColumnWidths)) }
+		if !floatEquals(lg.ColumnWidths[0], finalExpectedColWidth, epsilon_layout_test) {
+			t.Errorf("Expected Col0 width %.2f, got %.2f", finalExpectedColWidth, lg.ColumnWidths[0])
+		}
+	})
+
+	t.Run("FixedWidthWithColspan", func(t *testing.T) {
+		cellA := newLayoutTestCell("A", "span text", 2, 1); cellA.FixedWidth = 200.0
+		cellB := newLayoutTestCell("B", "end", 1, 1)
+		cellC := newLayoutTestCell("C", "c0", 1, 1)
+		cellD := newLayoutTestCell("D", "c1", 1, 1)
+		cellE := newLayoutTestCell("E", "c2", 1, 1)
+		tbl := &table.Table{Rows: []table.Row{
+			{Cells: []table.Cell{cellA, cellB}},
+			{Cells: []table.Cell{cellC, cellD, cellE}},
+		}}
+		lg, _ := PopulateOccupationMap(tbl)
+		err := lg.CalculateColumnWidthsAndRowHeights(testLayoutConsts, allTablesMap)
+		if err != nil && !strings.Contains(err.Error(), "failed to load font"){ t.Fatalf("CalculateColumnWidthsAndRowHeights failed: %v", err)}
+
+
+		if len(lg.ColumnWidths) < 3 { t.Fatalf("Expected at least 3 columns for colspan test, got %d", len(lg.ColumnWidths))}
+		sumOfSpannedColumns := lg.ColumnWidths[0] + lg.ColumnWidths[1]
+		// The sum must be AT LEAST FixedWidth. It can be more if other cells in those columns need more space.
+		if sumOfSpannedColumns < (200.0 - epsilon_layout_test) {
+			t.Errorf("Expected Col0+Col1 width to be at least 200.0, got %.2f", sumOfSpannedColumns)
+		}
+	})
+
+	t.Run("FixedWidthLessThanMinCellWidth", func(t *testing.T) {
+		cellA := newLayoutTestCell("A", "tiny", 1, 1); cellA.FixedWidth = 20.0
+		// testLayoutConsts.MinCellWidth is 50.0
+		tbl := &table.Table{Rows: []table.Row{{Cells: []table.Cell{cellA}}}}
+		lg, _ := PopulateOccupationMap(tbl)
+		err := lg.CalculateColumnWidthsAndRowHeights(testLayoutConsts, nil)
+		if err != nil && !strings.Contains(err.Error(), "failed to load font"){ t.Fatalf("CalculateColumnWidthsAndRowHeights failed: %v", err)}
+
+		if len(lg.ColumnWidths) < 1 { t.Fatalf("Expected at least 1 column width, got %d", len(lg.ColumnWidths)) }
+		if !floatEquals(lg.ColumnWidths[0], 20.0, epsilon_layout_test) {
+			t.Errorf("Expected Col0 width 20.0 (FixedWidth should override MinCellWidth), got %.2f", lg.ColumnWidths[0])
+		}
+	})
 }

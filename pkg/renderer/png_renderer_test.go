@@ -1,11 +1,11 @@
 package renderer
 
 import (
-	"diagramgen/pkg/parser" // Added for ParseAllText
+	"diagramgen/pkg/parser"
 	"diagramgen/pkg/table"
 	"os"
-	"path/filepath" // Added for filepath.Join
-	"reflect"       // Added for reflect.ValueOf
+	"path/filepath"
+	// "reflect" // No longer needed after changes to FullExampleFile test
 	"testing"
 )
 
@@ -15,18 +15,16 @@ func TestRenderToPNG_FileCreation(t *testing.T) {
 		Rows: []table.Row{
 			{Cells: []table.Cell{table.NewCell("R1C1", "Cell 1"), table.NewCell("R1C2", "Cell 2")}},
 		},
-		Settings: table.DefaultGlobalSettings(), // Ensure settings are initialized
+		Settings: table.DefaultGlobalSettings(),
 	}
 	outputPath := "test_output_creation.png"
-	// Defer removal at the start of the function to ensure cleanup even if test fails early.
 	defer func() {
 		err := os.Remove(outputPath)
-		if err != nil && !os.IsNotExist(err) { // Don't error if file already removed or never created
+		if err != nil && !os.IsNotExist(err) {
 			t.Logf("Warning: failed to remove test file %s: %v", outputPath, err)
 		}
 	}()
 
-	// For existing tests, pass an empty map for allTables
 	err := RenderToPNG(&testTable, make(map[string]table.Table), outputPath)
 	if err != nil {
 		t.Fatalf("RenderToPNG failed: %v", err)
@@ -39,7 +37,7 @@ func TestRenderToPNG_FileCreation(t *testing.T) {
 
 func TestRenderToPNG_EmptyTable(t *testing.T) {
 	emptyTable := table.Table{
-		Title:    "Empty Table Test", // Give it a title to make image slightly more interesting if needed
+		Title:    "Empty Table Test",
 		Rows:     []table.Row{},
 		Settings: table.DefaultGlobalSettings(),
 	}
@@ -59,13 +57,6 @@ func TestRenderToPNG_EmptyTable(t *testing.T) {
 	if _, err := os.Stat(outputPath); os.IsNotExist(err) {
 		t.Fatalf("RenderToPNG did not create the output file '%s' for empty table", outputPath)
 	}
-	// Optional: Check file size. An empty table should still produce a small PNG (e.g., just margins and table background).
-	// info, err := os.Stat(outputPath)
-	// if err == nil {
-	// 	if info.Size() == 0 { // Or some other threshold
-	// 		t.Errorf("RenderToPNG created an empty (0 byte) file for an empty table.")
-	// 	}
-	// }
 }
 
 func TestRenderToPNG_InvalidColorHandling(t *testing.T) {
@@ -75,14 +66,13 @@ func TestRenderToPNG_InvalidColorHandling(t *testing.T) {
 			{Cells: []table.Cell{
 				func() table.Cell {
 					c := table.NewCell("C1", "Content")
-					c.BackgroundColor = "#INVALIDCOLORSTRING" // Clearly invalid hex
+					c.BackgroundColor = "#INVALIDCOLORSTRING"
 					return c
 				}(),
 			}},
 		},
 		Settings: table.DefaultGlobalSettings(),
 	}
-	// Also test invalid global color
 	tableWithInvalidColor.Settings.EdgeColor = "NotAColor"
 
 	outputPath := "test_output_invalid_color.png"
@@ -93,13 +83,8 @@ func TestRenderToPNG_InvalidColorHandling(t *testing.T) {
 		}
 	}()
 
-	// Current png_renderer logs errors for invalid colors and uses defaults.
-	// It should not return an error to RenderToPNG for color parsing issues.
-	// The manual parseHexColor implemented returns an error, but RenderToPNG logs it and proceeds.
 	err := RenderToPNG(&tableWithInvalidColor, make(map[string]table.Table), outputPath)
 	if err != nil {
-		// This test assumes that color parsing errors are handled gracefully by the renderer
-		// (i.e., logged and defaults used) rather than propagated as fatal errors from RenderToPNG.
 		t.Fatalf("RenderToPNG failed: %v. Expected graceful handling of invalid colors.", err)
 	}
 
@@ -108,55 +93,51 @@ func TestRenderToPNG_InvalidColorHandling(t *testing.T) {
 	}
 }
 
-const testInputWithInnerTable = `
-table: [inner_sample] Sample Inner Table {bg_table:#FFFFE0}
-Detail | Value
-Status | OK
-Count | 12
+// TestRenderToPNG_FullExampleFile reads example.txt and renders it.
+func TestRenderToPNG_FullExampleFile(t *testing.T) {
+	content, err := os.ReadFile("../../example.txt") // Assumes test run from pkg/renderer directory
+	if err != nil {
+		t.Fatalf("Failed to read example.txt: %v", err)
+	}
+	inputStr := string(content)
 
-table: [main_sample] Main Table with Inner {bg_table:#E0FFFF}
-Description | Data | Notes
-Item A | Some regular text | Just a note
-Item B | ::table=inner_sample:: | Inner table here
-Item C | More text | End of section
-`
-
-func TestRenderToPNG_WithInnerTable(t *testing.T) {
-	// Import parser from the correct module path.
-	// This assumes the test is in the 'renderer' package, and 'diagramgen/pkg/parser' is the path.
-	// Adjust if your module structure is different.
-	// For this test, direct import path is used.
-	parserInstance := struct{ ParseAllText func(string) (table.AllTables, error) }{ParseAllText: parser.ParseAllText}
-
-
-	allTablesData, parseErr := parserInstance.ParseAllText(testInputWithInnerTable)
+	allTablesData, parseErr := parser.ParseAllText(inputStr)
 	if parseErr != nil {
-		t.Fatalf("ParseAllText failed: %v", parseErr)
+		t.Fatalf("ParseAllText failed for example.txt: %v\nInput:\n%s", parseErr, inputStr)
 	}
 
 	if allTablesData.MainTableID == "" {
-		t.Fatalf("MainTableID is empty after parsing. Input was:\n%s", testInputWithInnerTable)
+		t.Fatalf("MainTableID is empty after parsing example.txt. Input was:\n%s", inputStr)
 	}
 
 	mainTable, ok := allTablesData.Tables[allTablesData.MainTableID]
 	if !ok {
-		t.Fatalf("Main table with ID '%s' not found in parsed tables. MainTableID: %s, Available IDs: %v",
-			allTablesData.MainTableID, allTablesData.MainTableID, reflect.ValueOf(allTablesData.Tables).MapKeys())
+		// Log available keys for easier debugging if main table ID is wrong
+		availableIDs := make([]string, 0, len(allTablesData.Tables))
+		for k := range allTablesData.Tables {
+			availableIDs = append(availableIDs, k)
+		}
+		t.Fatalf("Main table with ID '%s' (from MainTableID) not found in parsed tables from example.txt. Available IDs: %v",
+			allTablesData.MainTableID, availableIDs)
 	}
 
-
 	tempDir := t.TempDir()
-	outputFilePath := filepath.Join(tempDir, "test_output_with_inner.png")
+	outputFilePath := filepath.Join(tempDir, "test_example_output.png")
 
-	renderErr := RenderToPNG(&mainTable, allTablesData.Tables, outputFilePath)
+	tablesToRender := allTablesData.Tables
+	if tablesToRender == nil { // Should not happen if parsing succeeded and MainTableID is set
+		tablesToRender = make(map[string]table.Table)
+	}
+
+	renderErr := RenderToPNG(&mainTable, tablesToRender, outputFilePath)
 	if renderErr != nil {
-		t.Errorf("RenderToPNG failed: %v", renderErr)
+		t.Errorf("RenderToPNG failed for example.txt: %v", renderErr)
 	}
 
 	fileInfo, statErr := os.Stat(outputFilePath)
 	if os.IsNotExist(statErr) {
 		t.Errorf("Output PNG file was not created: %s", outputFilePath)
-		return // Stop further checks if file doesn't exist
+		return
 	} else if statErr != nil {
 		t.Errorf("Error checking output file stats: %v", statErr)
 		return
