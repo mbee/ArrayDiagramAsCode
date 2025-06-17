@@ -683,104 +683,183 @@ func TestParseCellDirectives(t *testing.T) {
 		{
 			name:  "Only Table Reference",
 			input: "::table=ref1::",
-			want:  table.Cell{IsTableRef: true, TableRefID: "ref1", Content: "", Title: "", Colspan: 1, Rowspan: 1},
+			want:  table.Cell{IsTableRef: true, TableRefID: "ref1", Content: "", Title: "", Colspan: 1, Rowspan: 1, InnerTableAlignment: "top_left", InnerTableScaleMode: "none", FixedWidth: 0.0, FixedHeight: 0.0},
 		},
 		{
 			name:  "Table Reference with surrounding whitespace",
 			input: "  ::table=ref_two::  ",
-			want:  table.Cell{IsTableRef: true, TableRefID: "ref_two", Content: "", Title: "", Colspan: 1, Rowspan: 1},
+			want:  table.Cell{IsTableRef: true, TableRefID: "ref_two", Content: "", Title: "", Colspan: 1, Rowspan: 1, InnerTableAlignment: "top_left", InnerTableScaleMode: "none", FixedWidth: 0.0, FixedHeight: 0.0},
 		},
 		{
 			name:  "Title and Table Reference",
 			input: "[MyTitle] ::table=ref3::",
-			want:  table.Cell{IsTableRef: true, TableRefID: "ref3", Content: "", Title: "MyTitle", Colspan: 1, Rowspan: 1},
+			want:  table.Cell{IsTableRef: true, TableRefID: "ref3", Content: "", Title: "MyTitle", Colspan: 1, Rowspan: 1, InnerTableAlignment: "top_left", InnerTableScaleMode: "none", FixedWidth: 0.0, FixedHeight: 0.0},
 		},
 		{
 			name:  "Table Reference with Background Color",
 			input: "::table=ref4:: {bg:#123456}",
-			want:  table.Cell{IsTableRef: true, TableRefID: "ref4", Content: "", Title: "", BackgroundColor: "#123456", Colspan: 1, Rowspan: 1},
+			want:  table.Cell{IsTableRef: true, TableRefID: "ref4", Content: "", Title: "", BackgroundColor: "#123456", Colspan: 1, Rowspan: 1, InnerTableAlignment: "top_left", InnerTableScaleMode: "none", FixedWidth: 0.0, FixedHeight: 0.0},
 		},
 		{
 			name:  "Table Reference with Colspan and Rowspan",
 			input: "::table=ref5:: ::colspan=2:: ::rowspan=3::",
-			want:  table.Cell{IsTableRef: true, TableRefID: "ref5", Content: "", Title: "", Colspan: 2, Rowspan: 3},
+			want:  table.Cell{IsTableRef: true, TableRefID: "ref5", Content: "", Title: "", Colspan: 2, Rowspan: 3, InnerTableAlignment: "top_left", InnerTableScaleMode: "none", FixedWidth: 0.0, FixedHeight: 0.0},
 		},
 		{
 			name:  "Title, Content Before, Table Reference, Content After",
 			input: "[CellTitle] ContentBefore ::table=ref6:: MoreContentAfter",
-			want:  table.Cell{IsTableRef: true, TableRefID: "ref6", Content: "", Title: "CellTitle", Colspan: 1, Rowspan: 1},
+			want:  table.Cell{IsTableRef: true, TableRefID: "ref6", Content: "", Title: "CellTitle", Colspan: 1, Rowspan: 1, InnerTableAlignment: "top_left", InnerTableScaleMode: "none", FixedWidth: 0.0, FixedHeight: 0.0},
 		},
 		{
 			name:  "Content Before Table Reference",
 			input: "Content Before ::table=ref7::",
-			want:  table.Cell{IsTableRef: true, TableRefID: "ref7", Content: "", Title: "", Colspan: 1, Rowspan: 1},
+			want:  table.Cell{IsTableRef: true, TableRefID: "ref7", Content: "", Title: "", Colspan: 1, Rowspan: 1, InnerTableAlignment: "top_left", InnerTableScaleMode: "none", FixedWidth: 0.0, FixedHeight: 0.0},
 		},
 		{
 			name:  "Normal Content Cell",
 			input: "Just some normal content",
-			want:  table.Cell{Content: "Just some normal content", Title: "", IsTableRef: false, TableRefID: "", Colspan: 1, Rowspan: 1},
+			want:  table.Cell{Content: "Just some normal content", Title: "", IsTableRef: false, TableRefID: "", Colspan: 1, Rowspan: 1, InnerTableAlignment: "top_left", InnerTableScaleMode: "none", FixedWidth: 0.0, FixedHeight: 0.0},
 		},
 		{
 			name:  "Normal Content Cell with Title and BG",
 			input: "[NormalTitle] Normal Content {bg:#ABCDEF}",
-			want:  table.Cell{Content: "Normal Content", Title: "NormalTitle", BackgroundColor: "#ABCDEF", IsTableRef: false, TableRefID: "", Colspan: 1, Rowspan: 1},
+			want:  table.Cell{Content: "Normal Content", Title: "NormalTitle", BackgroundColor: "#ABCDEF", IsTableRef: false, TableRefID: "", Colspan: 1, Rowspan: 1, InnerTableAlignment: "top_left", InnerTableScaleMode: "none", FixedWidth: 0.0, FixedHeight: 0.0},
 		},
 		{
             name:  "Table Reference, BG, Colspan, Rowspan - different order",
             input: "::colspan=2:: ::table=ref8:: {bg:red} ::rowspan=4::",
-            want:  table.Cell{IsTableRef: true, TableRefID: "ref8", Content: "", BackgroundColor: "red", Colspan: 2, Rowspan: 4, Title: ""},
+            want:  table.Cell{IsTableRef: true, TableRefID: "ref8", Content: "", BackgroundColor: "red", Colspan: 2, Rowspan: 4, Title: "", InnerTableAlignment: "top_left", InnerTableScaleMode: "none", FixedWidth: 0.0, FixedHeight: 0.0},
         },
 		// --- New Test Cases for Multiline Content ---
 		{
 			name:  "Single Line Content",
 			input: "Single Line",
-			want:  table.Cell{Content: "Single Line", Title: "", IsTableRef: false, TableRefID: "", Colspan: 1, Rowspan: 1},
+			want:  table.Cell{Content: "Single Line", Title: "", IsTableRef: false, TableRefID: "", Colspan: 1, Rowspan: 1, InnerTableAlignment: "top_left", InnerTableScaleMode: "none", FixedWidth: 0.0, FixedHeight: 0.0},
 		},
 		{
 			name:  "Basic Multiline",
 			input: "Line 1\\nLine 2",
-			want:  table.Cell{Content: "Line 1\nLine 2", Title: "", IsTableRef: false, TableRefID: "", Colspan: 1, Rowspan: 1},
+			want:  table.Cell{Content: "Line 1\nLine 2", Title: "", IsTableRef: false, TableRefID: "", Colspan: 1, Rowspan: 1, InnerTableAlignment: "top_left", InnerTableScaleMode: "none", FixedWidth: 0.0, FixedHeight: 0.0},
 		},
 		{
 			name:  "Three Lines",
 			input: "Line A\\nLine B\\nLine C",
-			want:  table.Cell{Content: "Line A\nLine B\nLine C", Title: "", IsTableRef: false, TableRefID: "", Colspan: 1, Rowspan: 1},
+			want:  table.Cell{Content: "Line A\nLine B\nLine C", Title: "", IsTableRef: false, TableRefID: "", Colspan: 1, Rowspan: 1, InnerTableAlignment: "top_left", InnerTableScaleMode: "none", FixedWidth: 0.0, FixedHeight: 0.0},
 		},
 		{
 			name:  "Multiline with Directive",
 			input: "Content with \\n in it. {bg:#112233}",
-			want:  table.Cell{Content: "Content with \n in it.", BackgroundColor: "#112233", Title: "", IsTableRef: false, TableRefID: "", Colspan: 1, Rowspan: 1},
+			want:  table.Cell{Content: "Content with \n in it.", BackgroundColor: "#112233", Title: "", IsTableRef: false, TableRefID: "", Colspan: 1, Rowspan: 1, InnerTableAlignment: "top_left", InnerTableScaleMode: "none", FixedWidth: 0.0, FixedHeight: 0.0},
 		},
 		{
 			name:  "Title and Multiline Content",
 			input: "[Title] Text\\nMore Text",
-			want:  table.Cell{Title: "Title", Content: "Text\nMore Text", IsTableRef: false, TableRefID: "", Colspan: 1, Rowspan: 1},
+			want:  table.Cell{Title: "Title", Content: "Text\nMore Text", IsTableRef: false, TableRefID: "", Colspan: 1, Rowspan: 1, InnerTableAlignment: "top_left", InnerTableScaleMode: "none", FixedWidth: 0.0, FixedHeight: 0.0},
 		},
 		{
 			name:  "Escaped backslash n (now a newline)",
 			input: "Text with escaped backslash: \\\\n (should not be newline)",
-			// The parser converts "\\n" (literal backslash-n) to an actual newline.
-			// The input string "\\\\n" in the test becomes the string "\\n" for parseCell.
-			// strings.ReplaceAll then converts this "\\n" to "\n".
-			// The test output for 'got' was: "Text with escaped backslash: \ \n..."
-			// which means a literal backslash, a space, then a newline.
-			// This indicates the original string before ReplaceAll might have been "... \\ \n ..."
-			// Let's assume the 'got' output is precise: content is "Text with escaped backslash: \\\n (should not be newline)"
-			// where \ is literal and \n is newline.
-			// This matches the current code's actual output if the input to ReplaceAll was "... \\n ..."
-			// The previous 'want' was "...\n..." (no backslash before newline)
-			// The 'got' from test log was "... \ \n..." (backslash, space, newline)
-			// The actual content string for GOT is likely "...\ \n..."
-			// Let's try to match the GOT string exactly:
-			want:  table.Cell{Content: "Text with escaped backslash: \\\n (should not be newline)", Title: "", IsTableRef: false, TableRefID: "", Colspan: 1, Rowspan: 1},
+			want:  table.Cell{Content: "Text with escaped backslash: \\\n (should not be newline)", Title: "", IsTableRef: false, TableRefID: "", Colspan: 1, Rowspan: 1, InnerTableAlignment: "top_left", InnerTableScaleMode: "none", FixedWidth: 0.0, FixedHeight: 0.0},
 		},
 		{
 			name:  "Leading and Trailing Spaces with Newline",
 			input: "  Leading\\nTrailing Spaces  ",
-			// strings.TrimSpace is applied to the whole content after ReplaceAll
-			want:  table.Cell{Content: "Leading\nTrailing Spaces", Title: "", IsTableRef: false, TableRefID: "", Colspan: 1, Rowspan: 1},
+			want:  table.Cell{Content: "Leading\nTrailing Spaces", Title: "", IsTableRef: false, TableRefID: "", Colspan: 1, Rowspan: 1, InnerTableAlignment: "top_left", InnerTableScaleMode: "none", FixedWidth: 0.0, FixedHeight: 0.0},
 		},
 		// --- End of New Test Cases for Multiline Content ---
+
+		// --- Test Cases for New Cell Directives (inner_align, inner_scale, fixed_width, fixed_height) ---
+		{
+			name:  "inner_align directive",
+			input: "text ::inner_align=center:: more text",
+			want:  table.Cell{Content: "text   more text", InnerTableAlignment: "center", Title: "", Colspan: 1, Rowspan: 1, InnerTableScaleMode: "none", FixedWidth: 0.0, FixedHeight: 0.0},
+		},
+		{
+			name:  "inner_align with other value",
+			input: "::inner_align=bottom-right::",
+			want:  table.Cell{Content: "", InnerTableAlignment: "bottom-right", Title: "", Colspan: 1, Rowspan: 1, InnerTableScaleMode: "none", FixedWidth: 0.0, FixedHeight: 0.0},
+		},
+		{
+			name:  "inner_align default (no directive)",
+			input: "just text", // NewCell sets default "top_left"
+			want:  table.Cell{Content: "just text", InnerTableAlignment: "top_left", Title: "", Colspan: 1, Rowspan: 1, InnerTableScaleMode: "none", FixedWidth: 0.0, FixedHeight: 0.0},
+		},
+		{
+			name:  "inner_scale directive",
+			input: "::inner_scale=fit_width::",
+			want:  table.Cell{Content: "", InnerTableScaleMode: "fit_width", Title: "", Colspan: 1, Rowspan: 1, InnerTableAlignment: "top_left", FixedWidth: 0.0, FixedHeight: 0.0},
+		},
+		{
+			name:  "inner_scale with other value",
+			input: "::inner_scale=fit_both::",
+			want:  table.Cell{Content: "", InnerTableScaleMode: "fit_both", Title: "", Colspan: 1, Rowspan: 1, InnerTableAlignment: "top_left", FixedWidth: 0.0, FixedHeight: 0.0},
+		},
+		{
+			name:  "inner_scale default (no directive)",
+			input: "text", // NewCell sets default "none"
+			want:  table.Cell{Content: "text", InnerTableScaleMode: "none", Title: "", Colspan: 1, Rowspan: 1, InnerTableAlignment: "top_left", FixedWidth: 0.0, FixedHeight: 0.0},
+		},
+		{
+			name:  "fixed_width directive",
+			input: "content ::fixed_width=120.5::",
+			want:  table.Cell{Content: "content", FixedWidth: 120.5, Title: "", Colspan: 1, Rowspan: 1, InnerTableAlignment: "top_left", InnerTableScaleMode: "none", FixedHeight: 0.0},
+		},
+		{
+			name:  "fixed_width integer value",
+			input: "::fixed_width=75::",
+			want:  table.Cell{Content: "", FixedWidth: 75.0, Title: "", Colspan: 1, Rowspan: 1, InnerTableAlignment: "top_left", InnerTableScaleMode: "none", FixedHeight: 0.0},
+		},
+		{
+			name:  "fixed_width invalid value (abc)",
+			input: "::fixed_width=abc:: content",
+			want:  table.Cell{Content: "::fixed_width=abc:: content", FixedWidth: 0.0, Title: "", Colspan: 1, Rowspan: 1, InnerTableAlignment: "top_left", InnerTableScaleMode: "none", FixedHeight: 0.0},
+		},
+		{
+			name:  "fixed_width negative value",
+			input: "::fixed_width=-50::",
+			want:  table.Cell{Content: "::fixed_width=-50::", FixedWidth: 0.0, Title: "", Colspan: 1, Rowspan: 1, InnerTableAlignment: "top_left", InnerTableScaleMode: "none", FixedHeight: 0.0},
+		},
+		{
+			name:  "fixed_height directive",
+			input: "::fixed_height=90.0:: some content",
+			want:  table.Cell{Content: "some content", FixedHeight: 90.0, Title: "", Colspan: 1, Rowspan: 1, InnerTableAlignment: "top_left", InnerTableScaleMode: "none", FixedWidth: 0.0},
+		},
+		{
+			name:  "fixed_height integer value",
+			input: "::fixed_height=60::",
+			want:  table.Cell{Content: "", FixedHeight: 60.0, Title: "", Colspan: 1, Rowspan: 1, InnerTableAlignment: "top_left", InnerTableScaleMode: "none", FixedWidth: 0.0},
+		},
+		{
+			name:  "fixed_height invalid value (xyz)",
+			input: "content ::fixed_height=xyz::",
+			want:  table.Cell{Content: "content ::fixed_height=xyz::", FixedHeight: 0.0, Title: "", Colspan: 1, Rowspan: 1, InnerTableAlignment: "top_left", InnerTableScaleMode: "none", FixedWidth: 0.0},
+		},
+		{
+			name:  "fixed_height negative value",
+			input: "::fixed_height=-20::",
+			want:  table.Cell{Content: "::fixed_height=-20::", FixedHeight: 0.0, Title: "", Colspan: 1, Rowspan: 1, InnerTableAlignment: "top_left", InnerTableScaleMode: "none", FixedWidth: 0.0},
+		},
+		{
+			name:  "All new directives combined",
+			input: "Data ::fixed_width=100:: ::inner_align=middle_center:: ::fixed_height=50:: ::inner_scale=fit_both::", // Content "Data"
+			want:  table.Cell{Content: "Data", FixedWidth: 100.0, InnerTableAlignment: "middle_center", FixedHeight: 50.0, InnerTableScaleMode: "fit_both", Title: "", Colspan: 1, Rowspan: 1},
+		},
+		{
+			name:  "New and old directives combined",
+			input: "[Title] Data ::colspan=2:: {bg:#ABCDEF} ::fixed_width=100:: ::table=refX:: ::inner_align=bottom_left::",
+			want:  table.Cell{Title: "Title", Content: "", Colspan: 2, BackgroundColor: "#ABCDEF", FixedWidth: 100.0, IsTableRef: true, TableRefID: "refX", InnerTableAlignment: "bottom_left", InnerTableScaleMode: "none", FixedHeight: 0.0, Rowspan: 1},
+		},
+		{
+			name:  "Order independence check 1",
+			input: "::fixed_width=100:: ::colspan=2:: Content", // Content becomes "  Content" then "Content"
+			want:  table.Cell{Content: "Content", FixedWidth: 100.0, Colspan: 2, Title: "", Rowspan: 1, InnerTableAlignment: "top_left", InnerTableScaleMode: "none", FixedHeight: 0.0},
+		},
+		{
+			name:  "Order independence check 2",
+			input: "::colspan=2:: ::fixed_width=100:: Content", // Content becomes "  Content" then "Content"
+			want:  table.Cell{Content: "Content", Colspan: 2, FixedWidth: 100.0, Title: "", Rowspan: 1, InnerTableAlignment: "top_left", InnerTableScaleMode: "none", FixedHeight: 0.0},
+		},
+		// --- End of Test Cases for New Cell Directives ---
 	}
 
 	for _, tt := range tests {
@@ -788,6 +867,10 @@ func TestParseCellDirectives(t *testing.T) {
 			// Default cell has Colspan=1, Rowspan=1. Ensure 'want' reflects this if not specified.
 			if tt.want.Colspan == 0 { tt.want.Colspan = 1 }
 			if tt.want.Rowspan == 0 { tt.want.Rowspan = 1 }
+			// Ensure new fields also have defaults in 'want' if not specified by the test's explicit want.
+			if tt.want.InnerTableAlignment == "" { tt.want.InnerTableAlignment = "top_left"}
+			if tt.want.InnerTableScaleMode == "" { tt.want.InnerTableScaleMode = "none"}
+			// FixedWidth and FixedHeight default to 0.0 which is fine.
 
 
 			got, err := parseCell(tt.input)

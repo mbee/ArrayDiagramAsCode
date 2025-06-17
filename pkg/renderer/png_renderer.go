@@ -3,8 +3,10 @@ package renderer
 import (
 	"diagramgen/pkg/table"
 	"fmt"
+	// "image" // For image.Image - Not directly used, type is inferred.
 	"image/color"
 	"log"
+	"math"    // For math.Min and math.Round
 	"runtime" // Added for OS-dependent font path
 	"strings" // Needed for parseHexColor if it uses strings.TrimPrefix
 
@@ -218,6 +220,20 @@ func drawTableItself(dc *gg.Context, tableToDraw *table.Table, lg *LayoutGrid, a
 		dc.DrawRoundedRectangle(gridCell.X, gridCell.Y, gridCell.Width, gridCell.Height, defaultCornerRadius)
 		dc.Stroke()
 
+		// --- Start Clipping ---
+		dc.Push()
+		contentAreaX := gridCell.X + lConsts.Padding
+		contentAreaY := gridCell.Y + lConsts.Padding
+		contentAreaWidth := gridCell.Width - (2 * lConsts.Padding)
+		contentAreaHeight := gridCell.Height - (2 * lConsts.Padding)
+
+		if contentAreaWidth < 0 { contentAreaWidth = 0 }
+		if contentAreaHeight < 0 { contentAreaHeight = 0 }
+
+		dc.DrawRectangle(contentAreaX, contentAreaY, contentAreaWidth, contentAreaHeight)
+		dc.Clip()
+		// --- All subsequent drawing for this cell's content will be clipped ---
+
 		if cell.IsTableRef {
 			log.Printf("Cell '%s' in table '%s' is ref to table '%s'. Drawing inner table.", cell.Title, tableToDraw.ID, cell.TableRefID)
 			if cell.TableRefID == "" {
@@ -263,35 +279,146 @@ func drawTableItself(dc *gg.Context, tableToDraw *table.Table, lg *LayoutGrid, a
 				log.Printf("Error drawing inner table '%s' (cell '%s' in table '%s'): %v. Skipping.", refTable.ID, cell.Title, tableToDraw.ID, drawErr)
 				continue
 			}
-			// Draw the fully rendered inner table (subDc.Image()) onto the current dc at the correct position
-			// The position is gridCell.X/Y (top-left of the cell in currentLg) plus padding.
-			dc.DrawImage(subDc.Image(), int(gridCell.X+lConsts.Padding), int(gridCell.Y+lConsts.Padding))
+			naturalInnerTableImage := subDc.Image()
+			naturalInnerWidth := float64(naturalInnerTableImage.Bounds().Dx())
+			naturalInnerHeight := float64(naturalInnerTableImage.Bounds().Dy())
 
-			// Draw special border for the inner table
-			borderColorHex := tableToDraw.Settings.EdgeColor // Use parent table's edge color
-			if borderColorHex == "" {
-				borderColorHex = "#000000" // Default to black
+			if naturalInnerWidth == 0 || naturalInnerHeight == 0 {
+				log.Printf("Info: Inner table '%s' for cell '%s' has zero dimensions after rendering. Skipping drawing.", refTable.ID, cell.Title)
+				// dc.Pop() will be called at the end of the cell's drawing logic
+				// No drawing of image or border if inner table is effectively empty
+			} else {
+				parentContentX := gridCell.X + lConsts.Padding
+				parentContentY := gridCell.Y + lConsts.Padding
+				parentContentWidth := gridCell.Width - (2 * lConsts.Padding)
+				parentContentHeight := gridCell.Height - (2 * lConsts.Padding)
+				if parentContentWidth < 0 { parentContentWidth = 0 }
+				if parentContentHeight < 0 { parentContentHeight = 0 }
+
+				scaledW := naturalInnerWidth
+				scaledH := naturalInnerHeight
+				imageToDraw := naturalInnerTableImage
+				performScale := false
+
+				switch cell.InnerTableScaleMode {
+				case "none":
+					// No scaling
+				case "fit_width":
+					if naturalInnerWidth > 0 && parentContentWidth > 0 {
+						scaleFactor := parentContentWidth / naturalInnerWidth
+						scaledW = parentContentWidth
+						scaledH = naturalInnerHeight * scaleFactor
+						performScale = true
+					}
+				case "fit_height":
+					if naturalInnerHeight > 0 && parentContentHeight > 0 {
+						scaleFactor := parentContentHeight / naturalInnerHeight
+						scaledH = parentContentHeight
+						scaledW = naturalInnerWidth * scaleFactor
+						performScale = true
+					}
+				case "fit_both":
+					if naturalInnerWidth > 0 && naturalInnerHeight > 0 && parentContentWidth > 0 && parentContentHeight > 0 {
+						scaleFactorW := parentContentWidth / naturalInnerWidth
+						scaleFactorH := parentContentHeight / naturalInnerHeight
+						scaleFactor := math.Min(scaleFactorW, scaleFactorH)
+						scaledW = naturalInnerWidth * scaleFactor
+						scaledH = naturalInnerHeight * scaleFactor
+						performScale = true
+					}
+				case "fill_stretch":
+					if parentContentWidth > 0 && parentContentHeight > 0 {
+						scaledW = parentContentWidth
+						scaledH = parentContentHeight
+						if scaledW != naturalInnerWidth || scaledH != naturalInnerHeight {
+							performScale = true
+						}
+					}
+				}
+
+				// Ensure scaled dimensions are not zero or negative if parent content area is zero
+				if scaledW < 0 { scaledW = 0 }
+				if scaledH < 0 { scaledH = 0 }
+
+
+				if performScale && (math.Abs(scaledW-naturalInnerWidth) > epsilon || math.Abs(scaledH-naturalInnerHeight) > epsilon) &&
+					naturalInnerWidth > 0 && naturalInnerHeight > 0 && scaledW > 0 && scaledH > 0 {
+
+					roundedScaledW := int(math.Round(scaledW))
+					roundedScaledH := int(math.Round(scaledH))
+
+					if roundedScaledW > 0 && roundedScaledH > 0 {
+						scaledDc := gg.NewContext(roundedScaledW, roundedScaledH)
+						scaleFactorX := float64(roundedScaledW) / naturalInnerWidth
+						scaleFactorY := float64(roundedScaledH) / naturalInnerHeight
+						scaledDc.Scale(scaleFactorX, scaleFactorY)
+						scaledDc.DrawImage(naturalInnerTableImage, 0, 0)
+						imageToDraw = scaledDc.Image()
+						// Update scaledW/H to actual dimensions after potential rounding for context creation
+						scaledW = float64(imageToDraw.Bounds().Dx())
+						scaledH = float64(imageToDraw.Bounds().Dy())
+					} else {
+						// If rounded scaled dimensions are zero, effectively don't draw
+						imageToDraw = nil
+					}
+				} else if performScale { // if performScale was true but conditions for scaling image weren't fully met (e.g. target is 0)
+					// This can happen if parentContentWidth/Height is 0, leading to scaledW/H being 0
+					if scaledW <= 0 || scaledH <= 0 {
+						imageToDraw = nil // Don't draw if scaled to zero
+					}
+				}
+
+
+				offsetX, offsetY := 0.0, 0.0
+				switch cell.InnerTableAlignment {
+				case "top_center":
+					offsetX = (parentContentWidth - scaledW) / 2
+				case "top_right":
+					offsetX = parentContentWidth - scaledW
+				case "middle_left":
+					offsetY = (parentContentHeight - scaledH) / 2
+				case "center", "middle_center":
+					offsetX = (parentContentWidth - scaledW) / 2
+					offsetY = (parentContentHeight - scaledH) / 2
+				case "middle_right":
+					offsetX = parentContentWidth - scaledW
+					offsetY = (parentContentHeight - scaledH) / 2
+				case "bottom_left":
+					offsetY = parentContentHeight - scaledH
+				case "bottom_center":
+					offsetX = (parentContentWidth - scaledW) / 2
+					offsetY = parentContentHeight - scaledH
+				case "bottom_right":
+					offsetX = parentContentWidth - scaledW
+					offsetY = parentContentHeight - scaledH
+				// Default is "top_left", so offsetX=0, offsetY=0
+				}
+
+				drawX := parentContentX + offsetX
+				drawY := parentContentY + offsetY
+
+				if imageToDraw != nil && scaledW > 0 && scaledH > 0 {
+					dc.DrawImage(imageToDraw, int(math.Round(drawX)), int(math.Round(drawY)))
+
+					// Draw special border for the inner table, around the scaled and aligned image
+					borderColorHex := tableToDraw.Settings.EdgeColor // Use parent table's edge color
+					if borderColorHex == "" {
+						borderColorHex = "#000000" // Default to black
+					}
+					parsedBorderColor, err := parseHexColor(borderColorHex)
+					if err != nil {
+						log.Printf("Error parsing border color '%s' for inner table frame: %v. Defaulting to black.", borderColorHex, err)
+						parsedBorderColor = color.Black
+					}
+					dc.SetColor(parsedBorderColor)
+					dc.SetLineWidth(1.0)
+					dc.SetDash() // Ensure solid line
+
+					// Border should be around the actual drawn image at its final position and size
+					dc.DrawRectangle(math.Round(drawX), math.Round(drawY), math.Round(scaledW), math.Round(scaledH))
+					dc.Stroke()
+				}
 			}
-			parsedBorderColor, err := parseHexColor(borderColorHex)
-			if err != nil {
-				log.Printf("Error parsing border color '%s' for inner table frame: %v. Defaulting to black.", borderColorHex, err)
-				parsedBorderColor = color.Black
-			}
-			dc.SetColor(parsedBorderColor)
-			dc.SetLineWidth(1.0)
-			dc.SetDash() // Ensure solid line
-
-			borderX := gridCell.X + lConsts.Padding
-			borderY := gridCell.Y + lConsts.Padding
-			borderWidth := innerLg.CanvasWidth  // Actual width of the drawn inner table
-			borderHeight := innerLg.CanvasHeight // Actual height of the drawn inner table
-
-			// Ensure border dimensions are positive before drawing
-			if borderWidth > 0 && borderHeight > 0 {
-				dc.DrawRectangle(borderX, borderY, borderWidth, borderHeight)
-				dc.Stroke()
-			}
-
 		} else {
 			// Original text rendering logic for non-reference cells
 			textColor := color.Black // Or from settings
@@ -340,6 +467,8 @@ func drawTableItself(dc *gg.Context, tableToDraw *table.Table, lg *LayoutGrid, a
 				}
 			}
 		}
+		// --- End Clipping ---
+		dc.Pop()
 	}
 	return nil
 }

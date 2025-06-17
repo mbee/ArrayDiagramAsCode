@@ -25,8 +25,16 @@ type Cell struct {
 	Colspan         int    // For merged cells horizontally
 	Rowspan         int    // For merged cells vertically
 	BackgroundColor string // Specific background color for this cell, e.g., "#RRGGBB"
-	IsTableRef      bool   // New: Flag to indicate this cell is a table reference
-	TableRefID      string // New: ID of the table to render in this cell
+	IsTableRef      bool   // Flag to indicate this cell is a table reference
+	TableRefID      string // ID of the table to render in this cell
+
+	// New fields for inner table control
+	InnerTableAlignment string // e.g., "top_left", "center"
+	InnerTableScaleMode string // e.g., "none", "fit_width"
+
+	// New fields for fixed cell dimensions
+	FixedWidth  float64 // Specified fixed width in pixels. 0.0 means not set.
+	FixedHeight float64 // Specified fixed height in pixels. 0.0 means not set.
 }
 
 // NewCell creates a new Cell with default values.
@@ -34,11 +42,17 @@ type Cell struct {
 // BackgroundColor defaults to empty string, implying global default should be used.
 func NewCell(title string, content string) Cell {
 	return Cell{
-		Title:           title,
-		Content:         content,
-		Colspan:         1,
-		Rowspan:         1,    // Default rowspan is 1
-		BackgroundColor: "",   // Default to no specific background color (use table default)
+		Title:               title,
+		Content:             content,
+		Colspan:             1,
+		Rowspan:             1,    // Default rowspan is 1
+		BackgroundColor:     "",   // Default to no specific background color (use table default)
+		IsTableRef:          false,
+		TableRefID:          "",
+		InnerTableAlignment: "top_left", // Default alignment
+		InnerTableScaleMode: "none",     // Default scale mode
+		FixedWidth:          0.0,        // Default: not fixed
+		FixedHeight:         0.0,        // Default: not fixed
 	}
 }
 

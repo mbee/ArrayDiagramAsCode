@@ -339,18 +339,62 @@ func parseCell(cellInput string) (table.Cell, error) {
 
 	// Process \n for multiline content *before* final trimming for content variable
 	// but *after* directives that might be part of tempStr are removed.
-	tempStr = strings.ReplaceAll(tempStr, "\\n", "\n")
 
-	// What's left in tempStr after removing all directives and processing newlines is the actual content.
-	content := strings.TrimSpace(tempStr)
-
-	// Create cell using NewCell (which sets defaults) and then override.
-	finalCell := table.NewCell(title, content)
+	// Create cell using NewCell which sets defaults (including for new fields)
+	// Note: content is not yet set on finalCell, it's derived from the final tempStr later.
+	finalCell := table.NewCell(title, "") // Initialize with empty content temporarily
 	finalCell.Colspan = colspan
 	finalCell.Rowspan = rowspan
 	finalCell.BackgroundColor = bgColor
 	finalCell.IsTableRef = isTableRef
 	finalCell.TableRefID = tableRefID
+
+	// 6. Parse ::inner_align=VALUE::
+	innerAlignRegex := regexp.MustCompile(`(.*?)::inner_align=([\w\-]+)::(.*)`)
+	if matches := innerAlignRegex.FindStringSubmatch(tempStr); len(matches) == 4 {
+		finalCell.InnerTableAlignment = strings.TrimSpace(matches[2])
+		tempStr = strings.TrimSpace(matches[1] + " " + matches[3])
+	}
+
+	// 7. Parse ::inner_scale=MODE::
+	innerScaleRegex := regexp.MustCompile(`(.*?)::inner_scale=([\w\_]+)::(.*)`)
+	if matches := innerScaleRegex.FindStringSubmatch(tempStr); len(matches) == 4 {
+		finalCell.InnerTableScaleMode = strings.TrimSpace(matches[2])
+		tempStr = strings.TrimSpace(matches[1] + " " + matches[3])
+	}
+
+	// 8. Parse ::fixed_width=VALUE_PX::
+	fixedWidthRegex := regexp.MustCompile(`(.*?)::fixed_width=([\d\.]+)::(.*)`)
+	if matches := fixedWidthRegex.FindStringSubmatch(tempStr); len(matches) == 4 {
+		valStr := strings.TrimSpace(matches[2])
+		parsedVal, err := strconv.ParseFloat(valStr, 64)
+		if err == nil && parsedVal >= 0 {
+			finalCell.FixedWidth = parsedVal
+		} else {
+			// Consider adding import "log" and using log.Printf for warnings
+			fmt.Printf("Warning: Invalid value for fixed_width '%s' in cell input '%s'. Ignoring.\n", valStr, cellInput)
+		}
+		tempStr = strings.TrimSpace(matches[1] + " " + matches[3])
+	}
+
+	// 9. Parse ::fixed_height=VALUE_PX::
+	fixedHeightRegex := regexp.MustCompile(`(.*?)::fixed_height=([\d\.]+)::(.*)`)
+	if matches := fixedHeightRegex.FindStringSubmatch(tempStr); len(matches) == 4 {
+		valStr := strings.TrimSpace(matches[2])
+		parsedVal, err := strconv.ParseFloat(valStr, 64)
+		if err == nil && parsedVal >= 0 {
+			finalCell.FixedHeight = parsedVal
+		} else {
+			fmt.Printf("Warning: Invalid value for fixed_height '%s' in cell input '%s'. Ignoring.\n", valStr, cellInput)
+		}
+		tempStr = strings.TrimSpace(matches[1] + " " + matches[3])
+	}
+
+	// Process \n for multiline content
+	tempStr = strings.ReplaceAll(tempStr, "\\n", "\n")
+
+	// What's left in tempStr after removing all directives and processing newlines is the actual content.
+	finalCell.Content = strings.TrimSpace(tempStr) // Set the final content
 
 	// If the cell is a table reference, its direct content should be empty.
 	if finalCell.IsTableRef {

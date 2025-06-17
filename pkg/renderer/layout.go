@@ -207,7 +207,20 @@ func (lg *LayoutGrid) CalculateColumnWidthsAndRowHeights(constants LayoutConstan
 	for i := range lg.ColumnWidths { lg.ColumnWidths[i] = 0.0 }
 	for cell, pos := range uniqueCellPositions {
 		textIdealW, _, err := calculateCellContentSizeInternal(tempDc, cell, constants.FontSize, constants.LineHeightMultiplier, constants.Padding, 10000.0, allTables, constants)
-		if err != nil { log.Printf("Warning (ideal width calc): %v", err); continue }; cellFullIdealW := math.Max(textIdealW+(2*constants.Padding), constants.MinCellWidth)
+		if err != nil {
+			log.Printf("Warning (ideal width calc for cell '%s'): %v", cell.Title, err)
+			// Fallback to MinCellWidth if content calculation fails, ensuring textIdealW is for content area
+			textIdealW = constants.MinCellWidth - (2*constants.Padding)
+			if textIdealW < 0 { textIdealW = 0 }
+		}
+
+		var cellFullIdealW float64
+		if cell.FixedWidth > 0.0 { // FixedWidth is set
+			cellFullIdealW = cell.FixedWidth
+		} else { // Not fixed, calculate from content
+			cellFullIdealW = math.Max(textIdealW + (2*constants.Padding), constants.MinCellWidth)
+		}
+
 		if cell.Colspan == 1 { if cellFullIdealW > lg.ColumnWidths[pos.c] { lg.ColumnWidths[pos.c] = cellFullIdealW }
 		} else { currentSpanWidth := 0.0; for i := 0; i < cell.Colspan; i++ { if pos.c+i < lg.NumLogicalCols { currentSpanWidth += lg.ColumnWidths[pos.c+i] } }
 			if cellFullIdealW > currentSpanWidth { shortfall := cellFullIdealW - currentSpanWidth; widthToAddPerCol := shortfall / float64(cell.Colspan); for i := 0; i < cell.Colspan; i++ { if pos.c+i < lg.NumLogicalCols { lg.ColumnWidths[pos.c+i] += widthToAddPerCol } }}}}
@@ -215,7 +228,20 @@ func (lg *LayoutGrid) CalculateColumnWidthsAndRowHeights(constants LayoutConstan
 	for cell, pos := range uniqueCellPositions {
 		currentCellActualDrawingWidth := 0.0; for i := 0; i < cell.Colspan; i++ { if pos.c+i < lg.NumLogicalCols { currentCellActualDrawingWidth += lg.ColumnWidths[pos.c+i] } }
 		_, finalTextH, err := calculateCellContentSizeInternal(tempDc, cell, constants.FontSize, constants.LineHeightMultiplier, constants.Padding, currentCellActualDrawingWidth, allTables, constants)
-		if err != nil { log.Printf("Warning (final height calc): %v", err); continue }; cellFullFinalH := math.Max(finalTextH+(2*constants.Padding), constants.MinCellHeight)
+		if err != nil {
+			log.Printf("Warning (final height calc for cell '%s'): %v", cell.Title, err)
+			// Fallback to MinCellHeight if content calculation fails, ensuring finalTextH is for content area
+			finalTextH = constants.MinCellHeight - (2*constants.Padding)
+			if finalTextH < 0 { finalTextH = 0 }
+		}
+
+		var cellFullFinalH float64
+		if cell.FixedHeight > 0.0 { // FixedHeight is set
+			cellFullFinalH = cell.FixedHeight
+		} else { // Not fixed, calculate from content
+			cellFullFinalH = math.Max(finalTextH + (2*constants.Padding), constants.MinCellHeight)
+		}
+
 		if cell.Rowspan == 1 { if cellFullFinalH > lg.RowHeights[pos.r] { lg.RowHeights[pos.r] = cellFullFinalH }
 		} else { currentSpanHeight := 0.0; for i := 0; i < cell.Rowspan; i++ { if pos.r+i < lg.NumLogicalRows { currentSpanHeight += lg.RowHeights[pos.r+i] } }
             if cellFullFinalH > currentSpanHeight { shortfall := cellFullFinalH - currentSpanHeight; heightToAddPerRow := shortfall / float64(cell.Rowspan); for i := 0; i < cell.Rowspan; i++ { if pos.r+i < lg.NumLogicalRows { lg.RowHeights[pos.r+i] += heightToAddPerRow } }}}}
